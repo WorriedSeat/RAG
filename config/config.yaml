@@ -3,4 +3,7 @@ data_preprocessing:
   max_overview_words: 169
 
 paths:
-  
+  tmdb_download: "asaniczka/tmdb-movies-dataset-2023-930k-movies"
+  # lb_download:
+  tmdb_raw: "data/raw/TMDB_movie_dataset_v11.csv"
+  lb_raw: "data/raw/full_dump.jsonl"
