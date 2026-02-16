@@ -4,6 +4,7 @@ data_preprocessing:
 
 paths:
   tmdb_download: "asaniczka/tmdb-movies-dataset-2023-930k-movies"
-  # lb_download:
+  lb_download: "https://huggingface.co/datasets/pkchwy/letterboxd-all-movie-data/resolve/main/full_dump.jsonl"
   tmdb_raw: "data/raw/TMDB_movie_dataset_v11.csv"
   lb_raw: "data/raw/full_dump.jsonl"
+  film_data: "data/prep/film_data.csv"

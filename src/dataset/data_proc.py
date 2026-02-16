@@ -1,19 +1,21 @@
 import os
-import yaml
-import json
+import yaml, json
+import kagglehub
+import shutil, requests
+import argparse
 import pandas as pd
 import numpy as np
     
 class Dataset_proc:
     def __init__(self):
-        #FIXME нужно подумать над автоматическим выстроеним пути до файла
         with open("config/config.yaml", "r") as f:
             self.config = yaml.safe_load(f)
         
         self.MIN_OVERVIEW_WORDS = self.config["data_preprocessing"]["min_overview_words"] #6
         self.MAX_OVERVIEW_WORDS = self.config["data_preprocessing"]["max_overview_words"] #169
-    
-        #XXX подумать про то что при ините проверять наличие локальных файлов 
+        self.TMDB_RAW_PATH = self.config["paths"]["tmdb_raw"]
+        self.LB_RAW_PATH = self.config["paths"]["lb_raw"]
+        self.FILM_PREP_PATH = self.config["paths"]["film_data"]
     
     def _normalize_title(self, title:str | None):
         if pd.isna(title):
@@ -29,23 +31,50 @@ class Dataset_proc:
             return " ".join(words[:self.MAX_OVERVIEW_WORDS]) + '...'
         return text
     
-    #TODO разобраться со скачиванием датасетов
     def download_raw_data(self):
-        TMDB_DOWNLOAD_PATH = ...
-        LB_DOWNLOAD_PATH = ...
-        pass
-    
+        TMDB_DOWNLOAD_PATH = self.config["paths"]["tmdb_download"]
+        LB_DOWNLOAD_PATH = self.config["paths"]["lb_download"]
+        
+        
+        os.makedirs(os.path.dirname(self.TMDB_RAW_PATH), exist_ok=True)
+
+        try:
+            print("Downloading TMDB dataset...")
+            base_data_path = os.path.dirname(self.TMDB_RAW_PATH) #data/raw
+            os.environ['KAGGLEHUB_CACHE'] = base_data_path
+            tmp_path = kagglehub.dataset_download(TMDB_DOWNLOAD_PATH, force_download=True)
+                        
+            os.rename(tmp_path+"/"+os.path.basename(self.TMDB_RAW_PATH), self.TMDB_RAW_PATH)
+            tmp_folder_name = tmp_path.split("/")[len(base_data_path.split("/"))]
+            shutil.rmtree(path=base_data_path + "/" + tmp_folder_name)
+            print(f"\tDownloaded in {self.TMDB_RAW_PATH}")
+            
+        except Exception as e:
+            print(f"ERROR (tmdb-download): {e}")
+            return
+        
+        try:
+            print("Downloading LetterBox dataset...")
+            lb_response = requests.get(LB_DOWNLOAD_PATH, stream=True, timeout=30)
+            lb_response.raise_for_status()
+            
+            with open(self.LB_RAW_PATH, "wb") as f:
+                f.write(lb_response.content)
+            print(f"\tDownloaded in {self.LB_RAW_PATH}")
+        
+        except Exception as e:
+            print(f"ERROR (lb-download): {e}")
+            return
+        
+        print("All datasets are downloaded!!!")
+        
     def preprocess_film_data(self):
-        #Init the paths
-        TMDB_RAW_PATH = self.config["paths"]["tmdb_raw"]
-        LB_RAW_PATH = self.config["paths"]["lb_raw"]
-        
-        
+               
         #Getting the datasets
         print("Reading the datasets...")
-        tmdb = pd.read_csv(TMDB_RAW_PATH, usecols=['title', 'vote_average', 'vote_count', 'popularity', 'release_date', 'status', 'runtime', 'adult', "overview", 'genres', 'production_companies', 'production_countries', 'keywords'])
+        tmdb = pd.read_csv(self.TMDB_RAW_PATH, usecols=['title', 'vote_average', 'vote_count', 'popularity', 'release_date', 'status', 'runtime', 'adult', "overview", 'genres', 'production_companies', 'production_countries', 'keywords'])
         letterbox_ = []
-        for line in open(LB_RAW_PATH, "r"):
+        for line in open(self.LB_RAW_PATH, "r"):
             letterbox_.append(json.loads(line))
         letterbox = pd.DataFrame(letterbox_)
         letterbox.drop(['url', 'reviews', 'poster_url', 'rating'], axis=1, inplace=True)
@@ -79,9 +108,9 @@ class Dataset_proc:
         merged = merged[["title_tmdb", "title_lb", "status", "release_date", "year", "vote_average", "vote_count", "popularity", "runtime", "adult", "overview", "synopsis", "genres_tmdb", "genres_lb", "directors", "cast", "production_countries", "production_companies", "keywords"]]
 
         
-        # del(tmdb)
-        # del(letterbox_)
-        # del(letterbox)
+        del(tmdb)
+        del(letterbox_)
+        del(letterbox)
 
         
         print("Preprocessing data...")
@@ -138,10 +167,59 @@ class Dataset_proc:
         merged.drop('adult', axis=1, inplace=True)
         merged.reset_index(drop=True, inplace=True)
         
-        #TODO добавить создание текстовых описаний + сохранить        
         
+        #TODO добавить создание текстовых описаний + сохранить
+        # print("Creating descriptions...")
+        # merged["title_plot"] = merged.apply(lambda row: f"Title: {row['title']} Plot: {row['overview']}")        
+        os.makedirs(os.path.dirname(self.FILM_PREP_PATH), exist_ok=True)
+        merged.to_csv(self.FILM_PREP_PATH)
+        print(f"Preprocessed dataset saved to: {self.FILM_PREP_PATH}")
         
 if __name__ == "__main__":
     dataset_proc = Dataset_proc()
-    dataset_proc.preprocess_film_data()
-    #TODO прописать argparser
+    
+    parser = argparse.ArgumentParser(description="Parser for auto or manual mode")
+
+    #Subparsers for main modes
+    subparsers = parser.add_subparsers(dest='mode', required=True, help='Choose mode: auto or man')
+
+    #Subparser for 'auto'
+    auto_parser = subparsers.add_parser('auto', help='Automatic mode: checks files in directory and performs actions')
+
+    #Subparser for 'man'
+    man_parser = subparsers.add_parser('man', help='Manual mode: specify actions with flags')
+    man_parser.add_argument('--download', action='store_true', help='Perform download of datasets')
+    man_parser.add_argument('--prep', action='store_true', help='Perform prep action')
+
+    args = parser.parse_args()
+
+    if args.mode == 'auto':
+        print("Running in auto mode")
+        commands = {
+            "download": [True, dataset_proc.download_raw_data],
+            "preprocess": [True, dataset_proc.preprocess_film_data]
+        }
+        
+        
+        if os.path.exists(dataset_proc.TMDB_RAW_PATH) and os.path.exists(dataset_proc.LB_RAW_PATH):
+            commands["download"][0] = False
+
+        if os.path.exists(dataset_proc.FILM_PREP_PATH):
+            commands["preprocess"][0] = False
+
+            
+        for command in commands.keys():
+            if commands.get(command)[0]:
+                print(f"  Executing {command} step:")
+                commands.get(command)[1]()
+        
+    elif args.mode == 'man':
+        print("Running in manual mode")
+        
+        if args.download:
+            print("Downloading data:")
+            dataset_proc.download_raw_data()
+            
+        if args.prep:
+            print("Preprocessing data:")
+            dataset_proc.preprocess_film_data()
