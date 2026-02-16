@@ -1,6 +1,12 @@
 data_preprocessing:
   min_overview_words: 6
   max_overview_words: 169
+  top_cast: 5
+  top_keywords: 10
 
 paths:
-  
+  tmdb_download: "asaniczka/tmdb-movies-dataset-2023-930k-movies"
+  lb_download: "https://huggingface.co/datasets/pkchwy/letterboxd-all-movie-data/resolve/main/full_dump.jsonl"
+  tmdb_raw: "data/raw/TMDB_movie_dataset_v11.csv"
+  lb_raw: "data/raw/full_dump.jsonl"
+  film_data: "data/prep/film_data.csv"
