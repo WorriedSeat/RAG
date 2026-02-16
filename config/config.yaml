@@ -1,6 +1,8 @@
 data_preprocessing:
   min_overview_words: 6
   max_overview_words: 169
+  top_cast: 5
+  top_keywords: 10
 
 paths:
   tmdb_download: "asaniczka/tmdb-movies-dataset-2023-930k-movies"
