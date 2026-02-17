@@ -208,5 +208,5 @@ __marimo__/
 
 .python-version
 
-./data/prep/
-./data/raw/
+data/prep
+data/raw
