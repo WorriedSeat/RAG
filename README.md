@@ -52,15 +52,6 @@ data/
 ```
 ## Reproduce
 
-### Pipeline Overview (`dvc.yaml`)
-```yaml
-stages:
-  download  → data/raw/EuroSAT_RGB.zip
-  unzip     → data/raw/EuroSAT_RGB/
-  prep      → data/prep/EuroSAT_RGB/{image_info.csv, images/}
-  cleanup   → (optional) removes raw/zip if configured
-```
-
 ### Hyperparameters (`config/config.yaml`)
 ```yaml
 data_preprocessing:
