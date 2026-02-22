@@ -4,3 +4,4 @@ tqdm
 sentence_transformers
 requests
 kagglehub
+faiss_cpu
