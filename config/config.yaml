@@ -10,3 +10,7 @@ paths:
   tmdb_raw: "data/raw/TMDB_movie_dataset_v11.csv"
   lb_raw: "data/raw/full_dump.jsonl"
   film_data: "data/prep/film_data.csv"
+
+models:
+  embedding_model: "Snowflake/snowflake-arctic-embed-m"
+  
