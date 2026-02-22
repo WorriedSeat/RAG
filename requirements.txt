@@ -1,4 +1,6 @@
 numpy
 pandas
 tqdm
-
+sentence_transformers
+requests
+kagglehub
