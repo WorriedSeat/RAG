@@ -3,6 +3,7 @@ import yaml, pickle
 import faiss
 import numpy as np
 import pandas as pd
+import argparse
 from sentence_transformers import SentenceTransformer
 
 class FaissIndex:
@@ -32,6 +33,7 @@ class FaissIndex:
     
     def build(self):
         DATA_PREP_PATH = self.config["paths"]["film_data"]
+        print("Building FAISS search index")
         
         #Check if the preprocessed data is present
         if not os.path.exists(DATA_PREP_PATH):
@@ -39,7 +41,7 @@ class FaissIndex:
             return
         
         data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-        data = data.iloc[:300]
+        # data = data.iloc[:300] #test_build
         data.reset_index(drop=True, inplace=True)
         
         #Creating text & metadata lists for index
@@ -103,7 +105,32 @@ class FaissIndex:
 
 if __name__ == "__main__":
     faiss_index = FaissIndex()
-    faiss_index.build()
-    res = faiss_index.search("A girl called Zero stands in a crowded street, her occupation an assassin.", top_k=10)
-    for item in res:
-        print(f"{item["chunk_text"]} : {item["similarity"]}")
+    
+    #Adding parser for different index functions
+    parser = argparse.ArgumentParser(description="Parser for build/search functions")
+    func_subparsers = parser.add_subparsers(dest="func", required=True, help="Choose function: build/search")
+    
+    #Subparser for "build"
+    build_parser = func_subparsers.add_parser("build", help="Builds FAISS search index")
+    
+    #Subparser for "search"
+    search_parser = func_subparsers.add_parser("search", help="Run in CLI mode to search for some queries")
+    
+    args = parser.parse_args()
+    
+    if args.func == "build":
+        faiss_index.build()
+    
+    elif args.func == "search":
+        quit = False
+        while not quit:
+            query = input("Query: ")
+            res = faiss_index.search(query, top_k=10)
+            
+            print('='*65)
+            for item in res:
+                print(f"{item["similarity"]} : {item["chunk_text"]}\n")
+            print('='*65)
+            
+            choice = input("Quit?(y/n): ")
+            if choice=="y": quit = True 
