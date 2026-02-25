@@ -31,7 +31,7 @@ class FaissIndex:
         
         print("_"*50)
     
-    def build(self):
+    def build(self, gpu_enabled=True):
         DATA_PREP_PATH = self.config["paths"]["film_data"]
         print("Building FAISS search index")
         
@@ -64,11 +64,22 @@ class FaissIndex:
         num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
         quantizer = faiss.IndexFlatL2(self.embed_size)
         index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
-        index.train(embeddings)
-        index.add(embeddings)
         
-        #Saving the index
-        faiss.write_index(index, self.INDEX_PATH)
+        #Training & adding & saving gpu/cpu index
+        if gpu_enabled:
+            resouces = faiss.StandardGpuResources()
+            gpu_index = faiss.index_cpu_to_gpu(resouces, 0, index)
+            gpu_index.train(embeddings)
+            gpu_index.add(embeddings)
+            
+            cpu_index = faiss.index_gpu_to_cpu(gpu_index)
+            faiss.write_index(cpu_index, self.INDEX_PATH)        
+        else:    
+            index.train(embeddings)
+            index.add(embeddings)
+            faiss.write_index(index, self.INDEX_PATH)
+        
+        #Saving metadata
         with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
             pickle.dump(metadata, f)
         
