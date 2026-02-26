@@ -5,3 +5,6 @@ sentence_transformers
 requests
 kagglehub
 faiss_cpu
+transformers
+torch
+accelerate
