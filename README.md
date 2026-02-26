@@ -6,8 +6,11 @@ This project develops a RAG system for recommending movies.
 ## Table of Contents
 - [Project Overview](#project-overview)
 - [Features](#features)
-- [Installation](#inference)
+- [Structure](#structure)
+- [Inference](#inference)
+- [Models](#models)
 - [Data](#data)
+- [Search Index](#index)
 - [Authors](#authors)
 
 ## Project Overview
@@ -19,23 +22,6 @@ This project implements a Retrieval-Augmented Generation (RAG) system for person
 ## Features
 <!-- write some cool stuff used in project -->
 
-## Inference
-<!-- write about how to try our model locally -->
-
-## Data
-1. [Source](#source)
-2. [Structure](#structure)
-3. [Reproduce](#reproduce)
-4. [Preprocessing steps](#preprocessing)
-
-## Source
-As a source of our data we used:
-- [LetterBox](https://huggingface.co/datasets/pkchwy/letterboxd-all-movie-data) dataset: open-source dataset containing film info, including synopsis, directors, cast, genres, release year.
-- [TMDB](https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies) dataset: open-source dataset containing film info, including overviews, genres, keywords, release dates, runtime, rating.
-- ...
-
-All datasets cover films up to 2026 announcements.
-
 ## Structure
 ```
 data/
@@ -45,13 +31,37 @@ data/
 │   └── ...                             # ... user-queries dataset
 │       
 │
-└── prep/                      # Preprocessed vector db data & test data
-    ├── film_data.csv                   # ...
-    └── ...                             # ...
+└── prep/                      # Preprocessed data & search index & test data
+    ├── film_data.csv                   # Preprocessed film dataset with descriptions for embedding model
+    ├── faiss_index.ivf                 # FAISS search index
+    ├── faiss_metadata.pkl              # FAISS metadata
+    └── ...                             # Test user queries
 
 ```
 
-## Reproduce
+## Inference
+<!-- write about how to try our model locally -->
+
+
+## Models
+In our project we use the following models: 
+- **Embedding model**- [Snowflake](https://huggingface.co/Snowflake/snowflake-arctic-embed-m)
+  0.1B model is the smallest one which show great results in the native RAG tasks () according to [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
+- **Base LLM**- 
+
+## Data
+1. [Source](#source)
+2. [Structure](#structure)
+3. [Reproduce](#reproduce)
+4. [Preprocessing steps](#preprocessing)
+
+### Source
+As a source of our data we used:
+- [LetterBox](https://huggingface.co/datasets/pkchwy/letterboxd-all-movie-data) dataset: open-source dataset containing film info, including synopsis, directors, cast, genres, release year.
+- [TMDB](https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies) dataset: open-source dataset containing film info, including overviews, genres, keywords, release dates, runtime, rating.
+- ...
+
+All datasets cover films up to 2026 announcements.
 
 ### Hyperparameters (`config/config.yaml`)
 ```yaml
@@ -85,9 +95,32 @@ Preprocessing is handled in `src/dataset/data_proc.py` and includes:
 - Chunking: Structured text for embeddings (title + plot chunk, metadata chunk with rating/votes/popularity/runtime/cast/keywords).
 - Output: Cleaned CSV in prep/ for vector DB indexing.
 
+## Index
+We used FAISS as our vector database. The pipeline of index creation result into search index file `data/prep/faiss_index.ivf` and metadata file `data/prep/faiss_metadata.pkl`
 
-## Model
-<!-- write about embedding model and about base LLM -->
+### Replicate
+> Run the following code from the root of the directory
+
+To replicate the building of the full search index
+```bash
+python3 src/dataset/index.py build
+```
+> To see the how index is build on the small part of the dataset you can uncomment the following line in `src/dataset/index.py` and run the same command in terminal
+```python
+class FaissIndex:
+    ...
+    def build():
+        ...
+        # data = data.iloc[:300] #test_build
+        ...
+```
+
+To test the search results
+```bash
+python3 src/dataset/index.py search
+```
+> Works only when `data/prep/faiss_index.ivf` and `data/prep/faiss_metadata.pkl` is present locally!
+
 
 ## Authors
 - Vasilev Ivan
