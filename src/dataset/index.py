@@ -31,7 +31,7 @@ class FaissIndex:
         
         print("_"*50)
     
-    def build(self, gpu_enabled=True):
+    def build(self, gpu_enabled=False):
         DATA_PREP_PATH = self.config["paths"]["film_data"]
         print("Building FAISS search index")
         
@@ -41,7 +41,7 @@ class FaissIndex:
             return
         
         data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-        # data = data.iloc[:300] #test_build
+        data = data.iloc[:300] #test_build
         data.reset_index(drop=True, inplace=True)
         
         #Creating text & metadata lists for index

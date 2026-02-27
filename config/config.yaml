@@ -15,8 +15,6 @@ paths:
 
 models:
   embedding_model: "Snowflake/snowflake-arctic-embed-m"
-  
-models:
   llm_repo: "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
   llm_filename: "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
   chat_format: "mistral-instruct"

@@ -5,7 +5,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
 
-class BasedLLMModel:
+class BaseLLMModel:
     def __init__(self):
         with open("config/config.yaml", "r") as f:
             self.config = yaml.safe_load(f)
@@ -84,7 +84,7 @@ class BasedLLMModel:
 
 
 if __name__ == "__main__":
-    llm_model = BasedLLMModel()
+    llm_model = BaseLLMModel()
 
     parser = argparse.ArgumentParser(description="LLM CLI")
     subparsers = parser.add_subparsers(dest="func", required=True)
