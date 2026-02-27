@@ -67,23 +67,41 @@ class FaissIndex:
         
         #Training & adding & saving gpu/cpu index
         if gpu_enabled:
-            resouces = faiss.StandardGpuResources()
-            gpu_index = faiss.index_cpu_to_gpu(resouces, 0, index)
-            gpu_index.train(embeddings)
-            gpu_index.add(embeddings)
+            try:
+                print("Moving index to GPU...")
+                resources = faiss.StandardGpuResources()
+                gpu_index = faiss.index_cpu_to_gpu(resources, 0, index)
+                
+                print("Training index on GPU...")
+                gpu_index.train(embeddings)
+                
+                print("Adding embeddings on GPU...")
+                gpu_index.add(embeddings)
+                
+                print("Saving CPU-version of index...")
+                cpu_index = faiss.index_gpu_to_cpu(gpu_index)
+                faiss.write_index(cpu_index, self.INDEX_PATH)        
+                print(f"Successfully built index!\n  chunks: {cpu_index.ntotal} ({cpu_index.ntotal//2} plots, {cpu_index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
             
-            cpu_index = faiss.index_gpu_to_cpu(gpu_index)
-            faiss.write_index(cpu_index, self.INDEX_PATH)        
-        else:    
+            except Exception as e:
+                print(f"GPU indexing failed: {e}")
+                print("Falling back to CPU")
+                gpu_enabled = False
+            
+        if not gpu_enabled:
+            
+            print("Training index on CPU...") 
             index.train(embeddings)
+            
+            print("Adding Embeddings on CPU...")
             index.add(embeddings)
             faiss.write_index(index, self.INDEX_PATH)
+            print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
         
         #Saving metadata
         with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
             pickle.dump(metadata, f)
         
-        print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
         
     def search(self, query:str, top_k:int):
         #Checking if index accessible
