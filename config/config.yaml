@@ -12,6 +12,7 @@ paths:
   film_data: "data/prep/film_data.csv"
   faiss_index: "data/prep/faiss_index.ivf"
   faiss_metadata: "data/prep/faiss_metadata.pkl"
+  embeddings: "data/prep/embeddings_full.npy"
 
 models:
   embedding_model: "Snowflake/snowflake-arctic-embed-m"

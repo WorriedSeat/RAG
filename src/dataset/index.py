@@ -15,6 +15,7 @@ class FaissIndex:
         self.embed_size = self.embed_model.get_sentence_embedding_dimension() #768
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
         self.INDEX_PATH = self.config["paths"]["faiss_index"]
+        self.EMBED_PATH = self.config["paths"]["embeddings"]
         self.index = None
         self.metadata = None
         
@@ -41,7 +42,7 @@ class FaissIndex:
             return
         
         data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-        # data = data.iloc[:300] #test_build
+        data = data.iloc[:128] #test_build
         data.reset_index(drop=True, inplace=True)
         
         #Creating text & metadata lists for index
@@ -56,9 +57,16 @@ class FaissIndex:
             texts.append(row["title_plot"])
             metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
         
-        #Creating an embeddings
-        print("Creating embeddings:")
-        embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
+        #Getting an embeddings:
+        if os.path.exists(self.EMBED_PATH):
+            print("Loading embeddings...")
+            embeddings = np.load("data/prep/embeddings_full.npy")
+        
+        else:    
+            #Creating an embeddings
+            print("Creating embeddings:")
+            embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
+            np.save("data/prep/embeddings_full.npy", embeddings)
         
         #Creating an index
         num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
