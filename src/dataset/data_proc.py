@@ -58,36 +58,36 @@ class Dataset_proc:
         if pd.isna(row["vote_average"]):
             meta_parts.append("Rating: Unknown")
         else:
-            meta_parts.append(f"Rating: {row["vote_average"]:.1f}/10")
+            meta_parts.append(f"Rating: {row['vote_average']:.1f}/10")
         
         if pd.isna(row["vote_count"]):
             meta_parts.append("Votes: Unknown")
         else:
-            meta_parts.append(f"{row["vote_count"]:.0f} votes")
+            meta_parts.append(f"{row['vote_count']:.0f} votes")
         
         if pd.isna(row["popularity"]):
             meta_parts.append("Popularity: Unknown")
         else:
-            meta_parts.append(f"Popularity: {row["popularity"]:.1f}")
+            meta_parts.append(f"Popularity: {row['popularity']:.1f}")
         
         if pd.isna(row["runtime"]) or row["runtime"] == 0:
             meta_parts.append("Runtime: Unknown")
         else:
-            meta_parts.append(f"Runtime: {row["runtime"]:.0f} min")
+            meta_parts.append(f"Runtime: {row['runtime']:.0f} min")
         
         #Genres
         genres = row["genres"]
         if type(genres) == float or not genres:
             meta_parts.append("Genres: Unknown")
         else:
-            meta_parts.append(f"Genres: {", ".join(genres)}")
+            meta_parts.append(f"Genres: {', '.join(genres)}")
             
         #Directors
         directors = row["directors"]
         if type(directors) == float or not directors:
             meta_parts.append("Directors: Unknown")
         else:
-            meta_parts.append(f"Directors: {", ".join(directors)}")
+            meta_parts.append(f"Directors: {', '.join(directors)}")
         
         #Cast
         cast = row["cast"]
@@ -101,13 +101,13 @@ class Dataset_proc:
         if pd.isna(row["production_countries"]):
             meta_parts.append("Production countries: Unknown")
         else:
-            meta_parts.append(f"Production countries: {row["production_countries"]}")
+            meta_parts.append(f"Production countries: {row['production_countries']}")
         
         #Production companies
         if pd.isna(row["production_companies"]):
             meta_parts.append("Production companies: Unknown")
         else:
-            meta_parts.append(f"Production companies: {row["production_companies"]}")
+            meta_parts.append(f"Production companies: {row['production_companies']}")
         
         #Keywords
         if type(row["keywords"]) != float:
