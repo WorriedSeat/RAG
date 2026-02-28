@@ -42,6 +42,9 @@ class Dataset_proc:
     def _process_meta_info(self, row):
         meta_parts = []
         
+        #Title
+        meta_parts.append(row["title"])
+        
         #Release info
         release_info = row["release_info"]
         if pd.isna(release_info):
