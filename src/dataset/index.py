@@ -36,33 +36,34 @@ class FaissIndex:
         DATA_PREP_PATH = self.config["paths"]["film_data"]
         print("Building FAISS search index")
         
-        #Check if the preprocessed data is present
-        if not os.path.exists(DATA_PREP_PATH):
-            print(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
-            return
-        
-        data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-        data = data.iloc[:300] #test_build
-        data.reset_index(drop=True, inplace=True)
-        
-        #Creating text & metadata lists for index
-        texts = []
-        metadata = []
-        for idx, row in data.iterrows():
-            #Meta chunk
-            texts.append(row["title_meta"])
-            metadata.append({"row_idx": idx, "chunk_type": "meta", "title": row["title"], "chunk_text": row["title_meta"]})
-            
-            #Plot chunk
-            texts.append(row["title_plot"])
-            metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
-        
         #Getting an embeddings:
         if os.path.exists(self.EMBED_PATH):
             print("Loading embeddings...")
             embeddings = np.load("data/prep/embeddings_full.npy")
         
-        else:    
+        else:
+            
+            #Check if the preprocessed data is present
+            if not os.path.exists(DATA_PREP_PATH):
+                print(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
+                return
+            
+            data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
+            # data = data.iloc[:300] #test_build
+            data.reset_index(drop=True, inplace=True)
+            
+            #Creating text & metadata lists for index
+            texts = []
+            metadata = []
+            for idx, row in data.iterrows():
+                #Meta chunk
+                texts.append(row["title_meta"])
+                metadata.append({"row_idx": idx, "chunk_type": "meta", "title": row["title"], "chunk_text": row["title_meta"]})
+                
+                #Plot chunk
+                texts.append(row["title_plot"])
+                metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
+        
             #Creating an embeddings
             print("Creating embeddings:")
             embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
