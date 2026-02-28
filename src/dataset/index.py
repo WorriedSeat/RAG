@@ -15,6 +15,7 @@ class FaissIndex:
         self.embed_size = self.embed_model.get_sentence_embedding_dimension() #768
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
         self.INDEX_PATH = self.config["paths"]["faiss_index"]
+        self.EMBED_PATH = self.config["paths"]["embeddings"]
         self.index = None
         self.metadata = None
         
@@ -56,9 +57,16 @@ class FaissIndex:
             texts.append(row["title_plot"])
             metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
         
-        #Creating an embeddings
-        print("Creating embeddings:")
-        embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
+        #Getting an embeddings:
+        if os.path.exists(self.EMBED_PATH):
+            print("Loading embeddings...")
+            embeddings = np.load("data/prep/embeddings_full.npy")
+        
+        else:    
+            #Creating an embeddings
+            print("Creating embeddings:")
+            embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
+            np.save("data/prep/embeddings_full.npy", embeddings)
         
         #Creating an index
         num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
@@ -67,23 +75,41 @@ class FaissIndex:
         
         #Training & adding & saving gpu/cpu index
         if gpu_enabled:
-            resouces = faiss.StandardGpuResources()
-            gpu_index = faiss.index_cpu_to_gpu(resouces, 0, index)
-            gpu_index.train(embeddings)
-            gpu_index.add(embeddings)
+            try:
+                print("Moving index to GPU...")
+                resources = faiss.StandardGpuResources()
+                gpu_index = faiss.index_cpu_to_gpu(resources, 0, index)
+                
+                print("Training index on GPU...")
+                gpu_index.train(embeddings)
+                
+                print("Adding embeddings on GPU...")
+                gpu_index.add(embeddings)
+                
+                print("Saving CPU-version of index...")
+                cpu_index = faiss.index_gpu_to_cpu(gpu_index)
+                faiss.write_index(cpu_index, self.INDEX_PATH)        
+                print(f"Successfully built index!\n  chunks: {cpu_index.ntotal} ({cpu_index.ntotal//2} plots, {cpu_index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
             
-            cpu_index = faiss.index_gpu_to_cpu(gpu_index)
-            faiss.write_index(cpu_index, self.INDEX_PATH)        
-        else:    
+            except Exception as e:
+                print(f"GPU indexing failed: {e}")
+                print("Falling back to CPU")
+                gpu_enabled = False
+            
+        if not gpu_enabled:
+            
+            print("Training index on CPU...") 
             index.train(embeddings)
+            
+            print("Adding Embeddings on CPU...")
             index.add(embeddings)
             faiss.write_index(index, self.INDEX_PATH)
+            print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
         
         #Saving metadata
         with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
             pickle.dump(metadata, f)
         
-        print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
         
     def search(self, query:str, top_k:int):
         #Checking if index accessible
