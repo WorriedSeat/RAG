@@ -14,7 +14,7 @@ This project develops a RAG system for recommending movies.
 - [Authors](#authors)
 
 ## Project Overview
-This project implements a Retrieval-Augmented Generation (RAG) system for personalized movie recommendations. The system combines data from multiple sources to build a comprehensive movie database, uses embedding model ... for efficient retrieval of relevant films based on user queries, and generates natural language responses using a lightweight LLM ... .
+This project implements a Retrieval-Augmented Generation (RAG) system for personalized movie recommendations. The system combines data from multiple sources to build a comprehensive movie database, uses Snowflake embedding model and FAISS for efficient retrieval of relevant films based on user queries, and generates natural language responses using a lightweight LLM Mistral-7B-Instruct-v0.1.
 
 ### Why This Project?
 <!-- write something cool about the problems that project solves -->
@@ -40,8 +40,16 @@ data/
 ```
 
 ## Inference
-<!-- write about how to try our model locally -->
 
+### Terminal CLI
+> Run the following code from the root of the directory
+```bash
+python3 src/main.py
+```
+Note that this code executes only when all necessary files are present
+
+### Inference app
+In dev...
 
 ## Models
 In our project we use the following models: 
