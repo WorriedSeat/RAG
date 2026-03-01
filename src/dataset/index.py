@@ -1,6 +1,6 @@
 import os
 import yaml, pickle
-import tqdm
+from tqdm import tqdm
 import h5py
 import faiss
 import numpy as np
@@ -82,11 +82,15 @@ class FaissIndex:
             
             print(f"Embeddings saved to {self.EMBED_PATH}")
             
+            #Saving metadata
+            with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
+                pickle.dump(metadata, f)
+            
             # embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
             # np.save("data/prep/embeddings_full.npy", embeddings)
         
         #Creating an index
-        num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
+        num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
         quantizer = faiss.IndexFlatL2(self.embed_size)
         index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
         
@@ -123,9 +127,6 @@ class FaissIndex:
             faiss.write_index(index, self.INDEX_PATH)
             print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
         
-        #Saving metadata
-        with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
-            pickle.dump(metadata, f)
         
         
     def search(self, query:str, top_k:int):
