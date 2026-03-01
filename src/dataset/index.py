@@ -1,5 +1,7 @@
 import os
 import yaml, pickle
+import tqdm
+import h5py
 import faiss
 import numpy as np
 import pandas as pd
@@ -39,7 +41,8 @@ class FaissIndex:
         #Getting an embeddings:
         if os.path.exists(self.EMBED_PATH):
             print("Loading embeddings...")
-            embeddings = np.load("data/prep/embeddings_full.npy")
+            with h5py.File(self.EMBED_PATH, 'r') as hf:
+                embeddings = hf['embeddings'][:].astype('float32')
         
         else:
             
@@ -66,8 +69,21 @@ class FaissIndex:
         
             #Creating an embeddings
             print("Creating embeddings:")
-            embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
-            np.save("data/prep/embeddings_full.npy", embeddings)
+            
+            # Batch encode and append to H5
+            batch_size = 128
+            with h5py.File(self.EMBED_PATH, 'w') as hf:
+                dset = hf.create_dataset("embeddings", shape=(len(texts), self.embed_size), dtype='float32', chunks=True)  # chunked for large
+                for i in tqdm(range(0, len(texts), batch_size)):
+                    batch = texts[i:i + batch_size]
+                    batch_emb = self.embed_model.encode(batch, batch_size=batch_size, show_progress_bar=False, precision='float32', normalize_embeddings=True)
+                    dset[i:i + len(batch_emb)] = batch_emb
+                    print(f"Batch {i//batch_size + 1} saved")  # keep-alive
+            
+            print(f"Embeddings saved to {self.EMBED_PATH}")
+            
+            # embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
+            # np.save("data/prep/embeddings_full.npy", embeddings)
         
         #Creating an index
         num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
