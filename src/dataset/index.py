@@ -1,5 +1,7 @@
 import os
 import yaml, pickle
+from tqdm import tqdm
+import h5py
 import faiss
 import numpy as np
 import pandas as pd
@@ -32,45 +34,62 @@ class FaissIndex:
         
         print("_"*50)
     
+    def _create_embeddings(self, texts):
+        print("Creating embeddings:")
+        
+        # Batch encode and append to H5
+        batch_size = 128
+        with h5py.File(self.EMBED_PATH, 'w') as hf:
+            dset = hf.create_dataset("embeddings", shape=(len(texts), self.embed_size), dtype='float32', chunks=True)
+            for i in tqdm(range(0, len(texts), batch_size)):
+                batch = texts[i:i + batch_size]
+                batch_emb = self.embed_model.encode(batch, batch_size=batch_size, show_progress_bar=False, precision='float32', normalize_embeddings=True)
+                dset[i:i + len(batch_emb)] = batch_emb
+                print(f"Batch {i//batch_size + 1} saved")
+        
+        print(f"Embeddings saved to {self.EMBED_PATH}")
+    
     def build(self, gpu_enabled=False):
-        DATA_PREP_PATH = self.config["paths"]["film_data"]
         print("Building FAISS search index")
         
-        #Getting an embeddings:
-        if os.path.exists(self.EMBED_PATH):
-            print("Loading embeddings...")
-            embeddings = np.load("data/prep/embeddings_full.npy")
+        DATA_PREP_PATH = self.config["paths"]["film_data"]
         
-        else:
+        #Check if the preprocessed data is present
+        if not os.path.exists(DATA_PREP_PATH):
+            print(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
+            return
             
-            #Check if the preprocessed data is present
-            if not os.path.exists(DATA_PREP_PATH):
-                print(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
-                return
-            
-            data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-            # data = data.iloc[:300] #test_build
-            data.reset_index(drop=True, inplace=True)
-            
-            #Creating text & metadata lists for index
-            texts = []
-            metadata = []
-            for idx, row in data.iterrows():
-                #Meta chunk
-                texts.append(row["title_meta"])
-                metadata.append({"row_idx": idx, "chunk_type": "meta", "title": row["title"], "chunk_text": row["title_meta"]})
-                
-                #Plot chunk
-                texts.append(row["title_plot"])
-                metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
+        data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
+        data = data.iloc[:300] #test_embeddings_build
+        data.reset_index(drop=True, inplace=True)
         
-            #Creating an embeddings
-            print("Creating embeddings:")
-            embeddings = self.embed_model.encode(texts, batch_size=128, show_progress_bar=True, precision='float32', normalize_embeddings=True)
-            np.save("data/prep/embeddings_full.npy", embeddings)
+        #Creating text & metadata lists for index
+        texts = []
+        metadata = []
+        for idx, row in data.iterrows():
+            #Meta chunk
+            texts.append(row["title_meta"])
+            metadata.append({"row_idx": idx, "chunk_type": "meta", "title": row["title"], "chunk_text": row["title_meta"]})
+            
+            #Plot chunk
+            texts.append(row["title_plot"])
+            metadata.append({"row_idx": idx, "chunk_type": "plot", "title": row["title"], "chunk_text": row["title_plot"]})
+        
+        #Creating embeddings if not
+        if not os.path.exists(self.EMBED_PATH):
+            self._create_embeddings(texts)
+    
+        #Loading embeddings
+        print("Loading embeddings...")
+        with h5py.File(self.EMBED_PATH, 'r') as hf:
+            embeddings = hf['embeddings'][:].astype('float32')          
+            
+        #Saving metadata
+        with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
+            pickle.dump(metadata, f)
         
         #Creating an index
-        num_clusters = int(np.sqrt(embeddings.shape[0])) #XXX hyperparam to play with
+        num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
         quantizer = faiss.IndexFlatL2(self.embed_size)
         index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
         
@@ -106,11 +125,6 @@ class FaissIndex:
             index.add(embeddings)
             faiss.write_index(index, self.INDEX_PATH)
             print(f"Successfully built index!\n  chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
-        
-        #Saving metadata
-        with open(self.config["paths"]["faiss_metadata"], 'wb') as f:
-            pickle.dump(metadata, f)
-        
         
     def search(self, query:str, top_k:int):
         #Checking if index accessible

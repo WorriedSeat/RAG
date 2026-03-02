@@ -9,3 +9,4 @@ transformers
 torch
 accelerate
 llama-cpp-python
+h5py
