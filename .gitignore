@@ -210,3 +210,5 @@ __marimo__/
 
 data/prep
 data/raw
+indexes/*.pkl
+indexes/*.index
