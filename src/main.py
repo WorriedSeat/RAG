@@ -1,5 +1,5 @@
-from dataset.index import FaissIndex
-from models.base_llm import BaseLLMModel
+from src.dataset.index import FaissIndex
+from src.models.base_llm import BaseLLMModel
 
 class RAG:
     def __init__(self):
