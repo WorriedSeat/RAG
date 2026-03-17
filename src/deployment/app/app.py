@@ -2,7 +2,9 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-API_URL = "http://localhost:8000/chat"
+API_BASE = "http://localhost:8000"
+CHAT_URL = f"{API_BASE}/chat"
+RELOAD_URL = f"{API_BASE}/reload"
 
 st.set_page_config(
     page_title="Movie RAG system",
@@ -30,12 +32,16 @@ if prompt := st.chat_input("You can watch..."):
     with st.chat_message("assistant"):
         with st.spinner("Searching for films..."):
             try:
-                response = requests.post(API_URL, json={"query": prompt}, timeout=30)
+                response = requests.post(CHAT_URL, json={"query": prompt}, timeout=300)
                 
                 if response.status_code == 200:
-                    answer = response.json() if isinstance(response.json(), str) else response.text
+                    payload = response.json()
+                    if isinstance(payload, dict) and "recommendation" in payload:
+                        answer = payload["recommendation"]
+                    else:
+                        answer = str(payload)
                 else:
-                    answer = f"Server error: {response.status_code}"
+                    answer = f"Server error: {response.status_code} ({response.text})"
                     
             except requests.exceptions.RequestException as e:
                 answer = f"Server is unreachable: {str(e)}"
@@ -55,7 +61,10 @@ with col1:
 with col2:
     if st.button("Reload RAG system"):
         try:
-            requests.get("http://localhost:8000/health")
-            st.success("RAG system reloaded")
-        except:
-            st.error("Unable to reload RAG system")
+            r = requests.post(RELOAD_URL, timeout=300)
+            if r.status_code == 200:
+                st.success("RAG system reloaded")
+            else:
+                st.error(f"Unable to reload RAG system: {r.status_code} ({r.text})")
+        except Exception as e:
+            st.error(f"Unable to reload RAG system: {e}")
