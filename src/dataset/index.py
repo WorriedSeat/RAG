@@ -122,9 +122,11 @@ class FaissIndex:
         print(type(embeddings))
         
         #Creating an index
-        num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
-        quantizer = faiss.IndexFlatL2(self.embed_size)
-        index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
+        # num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
+        # quantizer = faiss.IndexFlatL2(self.embed_size)
+        # index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
+        
+        index = faiss.IndexFlatIP(self.embed_size)
         
         #Training & adding & saving gpu/cpu index
         if torch.cuda.is_available():
@@ -132,8 +134,8 @@ class FaissIndex:
             resources = faiss.StandardGpuResources()
             gpu_index = faiss.index_cpu_to_gpu(resources, 0, index)
             
-            print("Training index on GPU...")
-            gpu_index.train(embeddings)
+            # print("Training index on GPU...")
+            # gpu_index.train(embeddings)
             
             print("Adding embeddings on GPU...")
             gpu_index.add(embeddings)
@@ -141,8 +143,8 @@ class FaissIndex:
             index = faiss.index_gpu_to_cpu(gpu_index)
             
         else:
-            print("Training index on CPU...") 
-            index.train(embeddings)
+            # print("Training index on CPU...") 
+            # index.train(embeddings)
             
             print("Adding Embeddings on CPU...")
             index.add(embeddings)
@@ -154,18 +156,18 @@ class FaissIndex:
 
         
     def search(self, query:str, top_k:int):   
-        embed_query = self.embed_model.encode([query], prompt_name="query", precision="float32", normalize_embeddings=True)
-        self.index.nprobe = 10 #XXX hyperparam to play with
+        embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
+        # self.index.nprobe = 10 #XXX hyperparam to play with
         
-        distances, indices = self.index.search(embed_query, top_k)
+        scores, indices = self.index.search(embed_query, top_k)
         
         results = []
-        for dist, idx in zip(distances[0], indices[0]):
+        for score, idx in zip(scores[0], indices[0]):
             if idx == -1: continue
             
             results.append({
                 "chunk_text": self.metadata[idx]["chunk_text"],
-                "similarity": dist
+                "similarity": float(score)
             })
         
         #TODO подумать по поводу постфильтеринга
