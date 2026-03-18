@@ -84,7 +84,12 @@ class FaissIndex:
         self.index = None
         self.metadata = None
         
-        print(f"Created index instance:\n  embedding model: {config["models"]["embedding_model"]} on {self.device}\n  embedding size: {self.embed_size}\n  max sequence length: {self.max_seq_length}")
+        print(
+            "Created index instance:\n"
+            f"  embedding model: {config['models']['embedding_model']} on {self.device}\n"
+            f"  embedding size: {self.embed_size}\n"
+            f"  max sequence length: {self.max_seq_length}"
+        )
         
         #Reading index & metadata if created
         if os.path.exists(self.INDEX_PATH):
@@ -93,12 +98,33 @@ class FaissIndex:
             with open(config["paths"]["faiss_metadata"], "rb") as f:
                 self.metadata = pickle.load(f)   
             
-            print(f"Found and loaded:\n  index: {self.INDEX_PATH}\n  metadata: {config["paths"]["faiss_metadata"]}")
+            print(
+                "Found and loaded:\n"
+                f"  index: {self.INDEX_PATH}\n"
+                f"  metadata: {config['paths']['faiss_metadata']}"
+            )
         else:
             print(f"No index/metadata file found.\n \
                 Check paths or build index")
             
         print("_"*50)
+
+    def _get_film_chunk_texts(self, row_idx: int) -> tuple[str, str, str]:
+        """
+        Returns (title, plot_text, meta_text) for a given film row_idx.
+
+        Assumption: metadata was created in _create_save_metadata() in order:
+        meta chunk first, then plot chunk, for each row_idx.
+        """
+        meta_i = row_idx * 2
+        plot_i = row_idx * 2 + 1
+        meta = self.metadata[meta_i]
+        plot = self.metadata[plot_i]
+        
+        # Prefer title from meta (same as plot), but keep robust.
+        title = meta.get("title") or plot.get("title") or ""
+        return title, plot.get("chunk_text", ""), meta.get("chunk_text", "")
+
 
     def build(self):
         #Loading embeddings
@@ -158,20 +184,79 @@ class FaissIndex:
             chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
 
         
-    def search(self, query:str, top_k:int):   
+    def search(self, query: str, top_k: int, top_k_chunks_multiplier: int = 30, return_debug_chunks: bool = False):
+        """
+        Search FAISS by query and return top_k FILMS (aggregated by row_idx), not chunks.
+
+        Returns list[dict] with keys:
+        - row_idx, title, film_score, plot_text, meta_text
+        - optionally debug_chunks (if return_debug_chunks=True)
+        """
+        if self.index is None or self.metadata is None:
+            raise RuntimeError("Index/metadata is not loaded. Build the index first or check paths.")
+
         embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
         # self.index.nprobe = 10 #XXX hyperparam to play with
         
-        scores, indices = self.index.search(embed_query, top_k)
+        top_k_chunks = max(top_k, int(top_k) * int(top_k_chunks_multiplier))
+        scores, indices = self.index.search(embed_query, top_k_chunks)
         
-        results = []
+        by_film = {}
         for score, idx in zip(scores[0], indices[0]):
-            if idx == -1: continue
-            
-            results.append({
-                "chunk_text": self.metadata[idx]["chunk_text"],
-                "similarity": float(score)
-            })
+            if idx == -1:
+                continue
+
+            m = self.metadata[idx]
+            row_idx = m["row_idx"]
+            chunk_type = m.get("chunk_type")
+            s = float(score)
+
+            agg = by_film.get(row_idx)
+            if agg is None:
+                agg = {
+                    "row_idx": int(row_idx),
+                    "title": m.get("title", ""),
+                    "film_score": s,  # max over chunks (initialized)
+                    "plot_best": -1.0,
+                    "meta_best": -1.0,
+                }
+                if return_debug_chunks:
+                    agg["debug_chunks"] = []
+                by_film[row_idx] = agg
+            else:
+                if s > agg["film_score"]:
+                    agg["film_score"] = s
+
+
+            if chunk_type == "plot" and s > agg["plot_best"]:
+                agg["plot_best"] = s
+            elif chunk_type == "meta" and s > agg["meta_best"]:
+                agg["meta_best"] = s
+
+            if return_debug_chunks:
+                agg["debug_chunks"].append(
+                    {"chunk_type": chunk_type, "similarity": s, "chunk_text": m.get("chunk_text", "")}
+                )
+
+        # Sort films by aggregated score
+        ranked = sorted(by_film.values(), key=lambda x: x["film_score"], reverse=True)[:top_k]
+
+        # Always attach BOTH chunks for each film
+        results = []
+        for item in ranked:
+            title, plot_text, meta_text = self._get_film_chunk_texts(item["row_idx"])
+            out = {
+                "row_idx": item["row_idx"],
+                "title": title,
+                "film_score": float(item["film_score"]),
+                "plot_text": plot_text,
+                "meta_text": meta_text,
+            }
+            if return_debug_chunks:
+                out["debug_chunks"] = item.get("debug_chunks", [])
+                out["plot_best"] = float(item["plot_best"])
+                out["meta_best"] = float(item["meta_best"])
+            results.append(out)
         
         #TODO подумать по поводу постфильтеринга
         
@@ -204,8 +289,8 @@ if __name__ == "__main__":
             
             print('='*65)
             for item in res:
-                print(f"{item["similarity"]} : {item["chunk_text"]}\n")
+                print(f"{item['film_score']} : {item['title']}\n{item['plot_text']}\n{item['meta_text']}\n")
             print('='*65)
             
             choice = input("Quit?(y/n): ")
-            if choice=="y": quit = True 
+            if choice=="y": quit = True
