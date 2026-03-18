@@ -80,6 +80,7 @@ class FaissIndex:
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
         self.INDEX_PATH = config["paths"]["faiss_index"]
         self.EMBED_PATH = config["paths"]["embeddings"]
+        self.METADATA_PATH = config["paths"]["faiss_metadata"]
         self.index = None
         self.metadata = None
         
@@ -119,7 +120,9 @@ class FaissIndex:
                 with h5py.File(self.EMBED_PATH, 'r') as hf:
                     embeddings = hf['embeddings'][:].astype('float32')
         
-        print(type(embeddings))
+        if not os.path.exists(self.METADATA_PATH):
+            _create_save_metadata()
+        
         
         #Creating an index
         # num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
