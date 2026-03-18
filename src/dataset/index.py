@@ -121,7 +121,7 @@ class FaissIndex:
                     embeddings = hf['embeddings'][:].astype('float32')
         
         if not os.path.exists(self.METADATA_PATH):
-            _create_save_metadata()
+            _, _ = _create_save_metadata()
         
         
         #Creating an index

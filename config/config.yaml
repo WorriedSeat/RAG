@@ -11,7 +11,7 @@ paths:
   lb_raw: "data/raw/full_dump.jsonl"
   film_data: "data/prep/film_data.csv"
   embeddings: "data/prep/embeddings_full_snowflake.npy"
-  faiss_index: "indexes/index_IVFFlat.ivf"
+  faiss_index: "indexes/index_FlatIP.ivf"
   faiss_metadata: "indexes/faiss_metadata.pkl"
 
 models:
