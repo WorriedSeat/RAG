@@ -20,7 +20,6 @@ class RAG:
             context.append(film.get("meta_text", ""))
         response = self.llm.generate_with_context(query, context)
         return response
-        return "response"
     
     def terminal_cli(self):
         terminate = False
