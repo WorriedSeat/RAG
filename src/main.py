@@ -1,5 +1,5 @@
-from src.dataset.index import FaissIndex
-from src.models.base_llm import BaseLLMModel
+from dataset.index import FaissIndex
+from models.base_llm import BaseLLMModel
 
 class RAG:
     def __init__(self):
@@ -9,10 +9,18 @@ class RAG:
         print("RAG system is ready!!!")
         
     def process_query(self, query: str):
-        results = self.index.search(query=query, top_k=5)
-        context = [i.get("chunk_text") for i in results]
+        rewritten_query = self.llm.rewrite_query(query)
+        results = self.index.search(query=rewritten_query, top_k=5)
+
+        print(f"{"_"*20}\nrewritten query: {rewritten_query}\n{"_"*20}")
+        
+        context = []
+        for film in results:
+            context.append(film.get("plot_text", ""))
+            context.append(film.get("meta_text", ""))
         response = self.llm.generate_with_context(query, context)
         return response
+        return "response"
     
     def terminal_cli(self):
         terminate = False

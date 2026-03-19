@@ -51,32 +51,65 @@ class BaseLLMModel:
 
         print("LLM loaded successfully.")
 
-    def generate(self, query: str, system_prompt: str = None):
+    def generate(self, query: str, system_prompt: str = None, temperature: float = None):
         messages = []
 
+        if temperature == None:
+            temperature = self.temperature
+
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+            query = f"{system_prompt}\n\nUser request:{query}"
 
         messages.append({"role": "user", "content": query})
 
         response = self.llm.create_chat_completion(
             messages=messages,
-            temperature=self.temperature,
+            temperature=temperature,
             max_tokens=self.max_tokens
         )
 
         return response["choices"][0]["message"]["content"]
 
-    def generate_with_context(self, query: str, context_chunks: list):
-        """
-        RAG-style generation
-        """
+    def rewrite_query(self, query: str) -> str:
 
+        q = (query or "").strip()
+        if not q:
+            return ""
+
+        system_prompt = (
+            "Rewrite user requests into one concise English search query for a movie database.\n"
+            "Rules:\n"
+            "- Output ONLY the rewritten query (one line).\n"
+            "- Do not add quotes, markdown, or extra commentary.\n"
+            "- Preserve named entitiese such as title, duration, actors, etc., only if they are present in user query.\n"
+            f"- If the input is already a good search query, return it unchanged."
+        )
+
+        try:
+            out = self.generate(q, system_prompt, temperature=0.0)
+            if not isinstance(out, str):
+                return q
+            out = out.replace("\r", " ").replace("\n", " ").strip()
+            # Normalize repeated spaces
+            out = " ".join(out.split())
+            # Guardrails
+            if not out:
+                return q
+            if len(out) > 400:
+                out = out[:400].rstrip()
+            return out
+        
+        except Exception as e:
+            print(f"ERROR while rewriting user query: {e}")
+            return q
+
+    def generate_with_context(self, query: str, context_chunks: list):
+        
         context_text = "\n\n".join(context_chunks)
 
         system_prompt = (
             "You are a movie recommendation assistant.\n"
-            "Use the provided context to answer.\n\n"
+            "Use the provided context to answer.\n"
             f"Context:\n{context_text}"
         )
 

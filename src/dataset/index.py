@@ -195,7 +195,7 @@ class FaissIndex:
         if self.index is None or self.metadata is None:
             raise RuntimeError("Index/metadata is not loaded. Build the index first or check paths.")
 
-        embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
+        embed_query = self.embed_model.encode([query], prompt_name="query", precision="float32", normalize_embeddings=True)
         # self.index.nprobe = 10 #XXX hyperparam to play with
         
         top_k_chunks = max(top_k, int(top_k) * int(top_k_chunks_multiplier))
@@ -249,8 +249,8 @@ class FaissIndex:
                 "row_idx": item["row_idx"],
                 "title": title,
                 "film_score": float(item["film_score"]),
-                "plot_text": plot_text,
-                "meta_text": meta_text,
+                "plot_text": plot_text.split("Plot: ")[1],
+                "meta_text": " | ".join(meta_text.split(" | ")[1:]),
             }
             if return_debug_chunks:
                 out["debug_chunks"] = item.get("debug_chunks", [])
