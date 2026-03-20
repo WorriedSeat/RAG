@@ -77,12 +77,25 @@ class BaseLLMModel:
             return ""
 
         system_prompt = (
-            "Rewrite user requests into one concise English search query for a movie database.\n"
-            "Rules:\n"
-            "- Output ONLY the rewritten query (one line).\n"
-            "- Do not add quotes, markdown, or extra commentary.\n"
-            "- Preserve named entitiese such as title, duration, actors, etc., only if they are present in user query.\n"
-            f"- If the input is already a good search query, return it unchanged."
+            "You rewrite a user request into ONE concise English retrieval string for a movie FAISS index.\n"
+            "The FAISS index embeds documents using two templates:\n"
+            "1) plot chunk template (exactly like):\n"
+            "Title: {movie_title} Plot: {plot_text}\n"
+            "2) meta chunk template (exactly like, built as pieces joined with ' | ')\n"
+            "{movie_title} | Release: ... | Rating: ... | Votes: ... | Popularity: ... | Runtime: ... |\n"
+            "Genres: ... | Directors: ... | Cast: ... | Production countries: ... | Production companies: ... | Tags: ...\n"
+            "You MUST output a single line that concatenates BOTH templates in this exact order, using ' | ' between major parts:\n"
+            "Format (must match exactly):\n"
+            "Title: {movie_title} Plot: {plot_text} | {movie_title} | Release: {release} | Rating: {rating} | Votes: {votes} | Popularity: {popularity} | Runtime: {runtime} | Genres: {genres} | Directors: {directors} | Cast: {cast} | Production countries: {countries} | Production companies: {companies} | Tags: {tags}\n"
+            "Hard rules:\n"
+            "- Output ONLY the final one-line string. No JSON, no markdown, no quotes, no extra commentary.\n"
+            "- Output must be in English.\n"
+            "- Do NOT invent numeric or factual metadata (Release year/Rating/Votes/Popularity/Runtime/Production countries/Production companies) unless the user explicitly provided it.\n"
+            "- If a field is not provided by the user, use the exact literal 'Unknown' for that field (e.g., 'Release: Unknown', 'Rating: Unknown', 'Votes: Unknown', etc.).\n"
+            "- If the user mentions a specific movie title, set {movie_title} to that title.\n"
+            "- {plot_text} must be a short English plot summary / themes / key events matching the user intent (do not add invented cast/director unless user provided them; you can include their names only if they appear in the user request)\n"
+            "Output constraints:\n"
+            "- The output must be exactly ONE line (no newlines)\n"
         )
 
         try:

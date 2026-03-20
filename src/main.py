@@ -10,9 +10,12 @@ class RAG:
         
     def process_query(self, query: str):
         rewritten_query = self.llm.rewrite_query(query)
-        results = self.index.search(query=rewritten_query, top_k=5)
-
         print(f"{"_"*20}\nrewritten query: {rewritten_query}\n{"_"*20}")
+        
+        results = self.index.search(query=rewritten_query, top_k=5)
+        print("search results:")
+        for i in results:
+            print(i)
         
         context = []
         for film in results:
@@ -20,6 +23,7 @@ class RAG:
             context.append(film.get("meta_text", ""))
         response = self.llm.generate_with_context(query, context)
         return response
+        # return "result"
     
     def terminal_cli(self):
         terminate = False
