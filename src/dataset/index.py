@@ -183,7 +183,45 @@ class FaissIndex:
         print(f"Successfully built index!\n \
             chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
 
-        
+    def build_meta(self, index_path: str | None = None):
+
+        if index_path is None:
+            if self.INDEX_PATH.endswith(".ivf"):
+                index_path = self.INDEX_PATH[: -len(".ivf")] + "_meta.ivf"
+            else:
+                index_path = self.INDEX_PATH + "_meta"
+
+        # Ensure metadata exists in memory (full chunk list)
+        if not os.path.exists(self.METADATA_PATH):
+            _, _ = _create_save_metadata()
+
+        # Reload metadata as well (for runtime consistency)
+        with open(self.METADATA_PATH, "rb") as f:
+            self.metadata = pickle.load(f)
+
+        print("Loading embeddings (meta only)...")
+        with h5py.File(self.EMBED_PATH, "r") as hf:
+            emb_ds = hf["embeddings"]
+            n_total = emb_ds.shape[0]
+            n_meta = (n_total + 1) // 2
+
+            # meta vectors are at even indices: 0,2,4,...
+            # Use slicing to avoid loading the full matrix if possible.
+            embeddings_meta = emb_ds[::2].astype("float32")
+
+        # Build an ID-mapped index so returned ids correspond to original
+        # positions in `self.metadata`.
+        base_index = faiss.IndexFlatIP(self.embed_size)
+        index = faiss.IndexIDMap2(base_index)
+
+        # Add with original ids (even indices)
+        ids = np.arange(0, n_total, 2, dtype=np.int64)
+        index.add_with_ids(embeddings_meta, ids)
+
+        print(f"Saving metadata-only index to: {index_path}")
+        faiss.write_index(index, index_path)
+        print(f"Successfully built meta-only index! vectors: {index.ntotal} (meta chunks)")  
+    
     def search(self, query: str, top_k: int, top_k_chunks_multiplier: int = 30, return_debug_chunks: bool = False):
         """
         Search FAISS by query and return top_k FILMS (aggregated by row_idx), not chunks.
