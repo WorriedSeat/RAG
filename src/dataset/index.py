@@ -30,7 +30,7 @@ def _create_save_metadata() -> tuple[list, list]:
         raise FileNotFoundError(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
         
     data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-    data = data.iloc[:300] #XXX for test_embeddings_build
+    #data = data.iloc[:300] #XXX for test_embeddings_build
     data.reset_index(drop=True, inplace=True)
 
     #Creating text & metadata lists for index
@@ -62,7 +62,7 @@ def _create_embeddings(embed_model:SentenceTransformer):
     texts, _ = _create_save_metadata()
     
     # Batch encode and append to H5
-    batch_size = 128
+    batch_size = 400
     with h5py.File(EMBED_PATH, 'w') as hf:
         dset = hf.create_dataset("embeddings", shape=(len(texts), EMBED_DIM), dtype='float32', chunks=True)
         for i in tqdm(range(0, len(texts), batch_size)):
