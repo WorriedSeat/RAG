@@ -1,7 +1,7 @@
 data_preprocessing:
   min_overview_words: 6
   max_overview_words: 169
-  top_cast: 5
+  top_cast: 10
   top_keywords: 10
 
 paths:
@@ -11,7 +11,7 @@ paths:
   lb_raw: "data/raw/full_dump.jsonl"
   film_data: "data/prep/film_data.csv"
   embeddings: "data/prep/embeddings_full_snowflake.npy"
-  faiss_index: "indexes/index_FlatIP_meta.ivf"
+  faiss_index: "indexes/index_FlatIP"
   faiss_metadata: "indexes/faiss_metadata.pkl"
 
 models:

@@ -39,6 +39,9 @@ class Dataset_proc:
         
         return genres
     
+    def _clear_title(self, title: str):
+        return title if any(c.isalpha() for c in title) else ""
+    
     def _process_meta_info(self, row):
         meta_parts = []
         
@@ -53,27 +56,6 @@ class Dataset_proc:
             meta_parts.append(f"{release_info}")
         else:
             meta_parts.append(f"Released in {release_info}")
-        
-        #Rating, votes, popularity, runtime
-        if pd.isna(row["vote_average"]):
-            meta_parts.append("Rating: Unknown")
-        else:
-            meta_parts.append(f"Rating: {row['vote_average']:.1f}/10")
-        
-        if pd.isna(row["vote_count"]):
-            meta_parts.append("Votes: Unknown")
-        else:
-            meta_parts.append(f"{row['vote_count']:.0f} votes")
-        
-        if pd.isna(row["popularity"]):
-            meta_parts.append("Popularity: Unknown")
-        else:
-            meta_parts.append(f"Popularity: {row['popularity']:.1f}")
-        
-        if pd.isna(row["runtime"]) or row["runtime"] == 0:
-            meta_parts.append("Runtime: Unknown")
-        else:
-            meta_parts.append(f"Runtime: {row['runtime']:.0f} min")
         
         #Genres
         genres = row["genres"]
@@ -97,12 +79,6 @@ class Dataset_proc:
             top_cast = ", ".join(cast[:self.TOP_CAST])
             meta_parts.append(f"Cast: {top_cast}")
         
-        #Production countries
-        if pd.isna(row["production_countries"]):
-            meta_parts.append("Production countries: Unknown")
-        else:
-            meta_parts.append(f"Production countries: {row['production_countries']}")
-        
         #Production companies
         if pd.isna(row["production_companies"]):
             meta_parts.append("Production companies: Unknown")
@@ -121,7 +97,6 @@ class Dataset_proc:
     def download_raw_data(self):
         TMDB_DOWNLOAD_PATH = self.config["paths"]["tmdb_download"]
         LB_DOWNLOAD_PATH = self.config["paths"]["lb_download"]
-        
         
         os.makedirs(os.path.dirname(self.TMDB_RAW_PATH), exist_ok=True)
 
@@ -166,7 +141,6 @@ class Dataset_proc:
         letterbox = pd.DataFrame(letterbox_)
         letterbox.drop(["url", "reviews", "poster_url", "rating"], axis=1, inplace=True)
         
-        
         #Merging the datasets
         print("Merging the datasets...")
         letterbox.drop_duplicates(subset=["title"], inplace=True, ignore_index=True)
@@ -187,24 +161,30 @@ class Dataset_proc:
         )
 
         #Deduplicating by title_norm
-        merged = merged.drop_duplicates(subset=["title_norm"], keep="first")
+        # merged = merged.drop_duplicates(subset=["title_norm"], keep="first")
 
         #Removing temp columns
         merged = merged.drop(columns=["title_norm"], errors="ignore")
         merged.reset_index(drop=True, inplace=True)
-        merged = merged[["title_tmdb", "title_lb", "status", "release_date", "year", "vote_average", "vote_count", "popularity", "runtime", "adult", "overview", "synopsis", "genres_tmdb", "genres_lb", "directors", "cast", "production_countries", "production_companies", "keywords"]]
-
+        merged = merged[["title_tmdb", "title_lb", 
+                         "status", "release_date", "year", 
+                         "vote_average", "vote_count", "popularity", 
+                         "runtime", 
+                         "adult", 
+                         "overview", "synopsis", 
+                         "genres_tmdb", "genres_lb", 
+                         "directors", "cast", 
+                         "production_countries", "production_companies", 
+                         "keywords"]]
         
         del(tmdb)
         del(letterbox_)
         del(letterbox)
-
         
         print("Preprocessing data...")
         #Merging titles
         merged["title"] = merged["title_tmdb"].combine_first(merged["title_lb"])
         merged.drop(columns=["title_tmdb", "title_lb"], inplace=True)
-        
         
         #Merging release_dates
         merged.drop(merged[merged["status"].isin(["Canceled", "Rumored", "Planned"])].index, inplace=True)
@@ -215,28 +195,25 @@ class Dataset_proc:
             .combine_first(merged["status"])
         )
         merged.drop(columns=["release_date", "year", "status"], inplace=True)
-
         
         #Merging overviews
         merged["overview_new"] = merged["overview"].combine_first(merged["synopsis"])
         merged.drop(columns=["overview", "synopsis"], inplace=True)
-        
         
         #Merging genres
         merged["genres"] = merged["genres_tmdb"].combine_first(merged["genres_lb"])
         merged.drop(columns=["genres_tmdb", "genres_lb"], inplace=True)
         merged["genres"] = merged["genres"].apply(self._genres_to_list)
         
-        
         #Cleaning column names, indexes
         merged = merged[["title", "release_info", "overview_new", "vote_average", "vote_count", "popularity", "runtime", "genres", "adult","directors", "cast", "production_countries", "production_companies", "keywords"]]
         merged.rename(columns={"overview_new":"overview"}, inplace=True)
         merged.reset_index(drop=True, inplace=True)
         
-        
         #Dropping missing titles
+        merged.dropna(subset=["title"], inplace=True)
+        merged["title"] = merged["title"].apply(self._clear_title)
         merged.drop(merged[merged["title"].isin([" ", ""])].index, inplace=True)
-        
         
         #Dropping nans and too small/too big overviews
         merged.dropna(subset=["overview"], inplace=True, ignore_index=True)
@@ -248,20 +225,23 @@ class Dataset_proc:
         merged["overview"] = merged["overview"].apply(self._truncate_overview)
         
         merged.drop("overview_length", axis=1, inplace=True)
-
         
         #Dropping adult titles
         merged.drop(merged[merged["adult"] == True].index, inplace=True)
         merged.drop("adult", axis=1, inplace=True)
-        merged.reset_index(drop=True, inplace=True)
         
+        cols = ["vote_average", "vote_count", "popularity", "runtime", "genres", "directors", "cast", "production_companies", "production_countries", "keywords"]
+        mask = (merged[cols].isin([0]) | merged[cols].isna()).all(axis=1)
+        merged = merged[~mask]
+        
+        # merged.drop_duplicates(subset=[["title", "release_info"]], inplace=True)
+        merged.reset_index(drop=True, inplace=True)
         
         #Creating descriptions for embeddings
         print("Creating descriptions...")
-        merged["title_plot"] = merged.apply(lambda row: f"Title: {row["title"]} Plot: {row["overview"]}", axis=1)        
+        merged["title_plot"] = merged.apply(lambda row: f"{row["title"]} | Plot: {row["overview"]}", axis=1)        
         merged["title_meta"] = merged.apply(self._process_meta_info, axis=1)
 
-        
         #Saving preprocessed dataset
         os.makedirs(os.path.dirname(self.FILM_PREP_PATH), exist_ok=True)
         merged.to_csv(self.FILM_PREP_PATH)

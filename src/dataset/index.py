@@ -27,7 +27,7 @@ def _create_save_metadata() -> tuple[list, list]:
         raise FileNotFoundError(f"ERROR: No preprocessed data found!\n  Run src/dataset/data_proc.py auto firstly.")
         
     data = pd.read_csv(DATA_PREP_PATH, usecols=["title", "title_plot", "title_meta"])
-    # data = data.iloc[:300] #XXX for test_embeddings_build
+    data = data.iloc[:300] #XXX for test_embeddings_build
     data.reset_index(drop=True, inplace=True)
 
     #Creating text & metadata lists for index
@@ -78,10 +78,11 @@ class FaissIndex:
         self.embed_model = SentenceTransformer(config["models"]["embedding_model"], device=self.device)
         self.embed_size = self.embed_model.get_sentence_embedding_dimension() #768
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
-        self.INDEX_PATH = config["paths"]["faiss_index"]
+        self.INDEX_NAME = config["paths"]["faiss_index"]
         self.EMBED_PATH = config["paths"]["embeddings"]
         self.METADATA_PATH = config["paths"]["faiss_metadata"]
-        self.index = None
+        self.meta_index = None
+        self.plot_index = None
         self.metadata = None
         
         print(
@@ -91,23 +92,34 @@ class FaissIndex:
             f"  max sequence length: {self.max_seq_length}"
         )
         
-        #Reading index & metadata if created
-        if os.path.exists(self.INDEX_PATH):
-            self.index = faiss.read_index(self.INDEX_PATH)
-            
-            with open(config["paths"]["faiss_metadata"], "rb") as f:
-                self.metadata = pickle.load(f)   
-            
-            print(
-                "Found and loaded:\n"
-                f"  index: {self.INDEX_PATH}\n"
-                f"  metadata: {config['paths']['faiss_metadata']}"
-            )
-        else:
-            print(f"No index/metadata file found.\n \
-                Check paths or build index")
-            
+        self._load()
+        
         print("_"*50)
+
+    def _load(self):
+        # Reading meta_index
+        if os.path.exists(self.INDEX_NAME + "_meta.ivf"):
+            self.meta_index = faiss.read_index(self.INDEX_NAME + "_meta.ivf")
+            print(f"Loaded meta_index: {self.INDEX_NAME + "_meta.ivf"}")
+        else:
+            print(f"No meta_index found by path {self.INDEX_NAME + "_meta.ivf"}")
+        
+        # Reading plot_index
+        if os.path.exists(self.INDEX_NAME + "_plot.ivf"):
+            self.plot_index = faiss.read_index(self.INDEX_NAME + "_plot.ivf")
+            print(f"Loaded plot_index: {self.INDEX_NAME + "_plot.ivf"}")
+        else:
+            print(f"No plot_index found by path {self.INDEX_NAME + "_plot.ivf"}")
+        
+        # Reading metadata
+        if os.path.exists(self.METADATA_PATH):
+            with open(self.METADATA_PATH, "rb") as f:
+                self.metadata = pickle.load(f)  
+            
+            print(f"Loaded metadata: {self.METADATA_PATH}")
+        else:
+            print(f"No metadata found by path {self.METADATA_PATH}")
+
 
     def _get_film_chunk_texts(self, row_idx: int) -> tuple[str, str, str]:
         """
@@ -125,71 +137,10 @@ class FaissIndex:
         title = meta.get("title") or plot.get("title") or ""
         return title, plot.get("chunk_text", ""), meta.get("chunk_text", "")
 
-
-    def build(self):
-        #Loading embeddings
-        print("Loading embeddings...")
-        try:
-            with h5py.File(self.EMBED_PATH, 'r') as hf:
-                embeddings = hf['embeddings'][:].astype('float32') 
-        
-        except FileNotFoundError:
-            choice = input(f"No embeddings found {self.EMBED_PATH}. Ensure that file is present.\n \
-                Create embeddings? (y/n): ")
-            
-            if choice.lower() == 'n':
-                print("Can't create index without embeddings")
-                return 
-            
-            else:
-                _create_embeddings(self.embed_model)
-                with h5py.File(self.EMBED_PATH, 'r') as hf:
-                    embeddings = hf['embeddings'][:].astype('float32')
-        
-        if not os.path.exists(self.METADATA_PATH):
-            _, _ = _create_save_metadata()
-        
-        
-        #Creating an index
-        # num_clusters = int(np.sqrt(self.embed_size)) #XXX hyperparam to play with
-        # quantizer = faiss.IndexFlatL2(self.embed_size)
-        # index = faiss.IndexIVFFlat(quantizer, self.embed_size, num_clusters)
-        
-        index = faiss.IndexFlatIP(self.embed_size)
-        
-        #Training & adding & saving gpu/cpu index
-        if torch.cuda.is_available():
-            print("Moving index to GPU...")
-            resources = faiss.StandardGpuResources()
-            gpu_index = faiss.index_cpu_to_gpu(resources, 0, index)
-            
-            # print("Training index on GPU...")
-            # gpu_index.train(embeddings)
-            
-            print("Adding embeddings on GPU...")
-            gpu_index.add(embeddings)
-            
-            index = faiss.index_gpu_to_cpu(gpu_index)
-            
-        else:
-            # print("Training index on CPU...") 
-            # index.train(embeddings)
-            
-            print("Adding Embeddings on CPU...")
-            index.add(embeddings)
-                   
-        print("Saving CPU-version of index...")
-        faiss.write_index(index, self.INDEX_PATH)        
-        print(f"Successfully built index!\n \
-            chunks: {index.ntotal} ({index.ntotal//2} plots, {index.ntotal//2} film metadata)\n  saved to {self.INDEX_PATH}")
-
-    def build_meta(self, index_path: str | None = None):
+    def _build_meta(self, index_path: str | None = None):
 
         if index_path is None:
-            if self.INDEX_PATH.endswith(".ivf"):
-                index_path = self.INDEX_PATH[: -len(".ivf")] + "_meta.ivf"
-            else:
-                index_path = self.INDEX_PATH + "_meta"
+            index_path = self.INDEX_NAME + "_meta.ivf"
 
         # Ensure metadata exists in memory (full chunk list)
         if not os.path.exists(self.METADATA_PATH):
@@ -222,13 +173,10 @@ class FaissIndex:
         faiss.write_index(index, index_path)
         print(f"Successfully built meta-only index! vectors: {index.ntotal} (meta chunks)")  
     
-    def build_plot(self, index_path: str | None = None):
+    def _build_plot(self, index_path: str | None = None):
         
         if index_path is None:
-            if self.INDEX_PATH.endswith(".ivf"):
-                index_path = self.INDEX_PATH[: -len(".ivf")] + "_plot.ivf"
-            else:
-                index_path = self.INDEX_PATH + "_plot"
+            index_path = self.INDEX_NAME + "_plot.ivf"
 
         # Ensure metadata exists in memory (full chunk list)
         if not os.path.exists(self.METADATA_PATH):
@@ -238,7 +186,7 @@ class FaissIndex:
         with open(self.METADATA_PATH, "rb") as f:
             self.metadata = pickle.load(f)
     
-        print("Loading embeddings (meta only)...")
+        print("Loading embeddings (plot only)...")
         with h5py.File(self.EMBED_PATH, "r") as hf:
             emb_ds = hf["embeddings"]
             n_total = emb_ds.shape[0]
@@ -259,10 +207,19 @@ class FaissIndex:
 
         print(f"Saving plot-only index to: {index_path}")
         faiss.write_index(index, index_path)
-        print(f"Successfully built plot-only index! vectors: {index.ntotal} (meta chunks)")
+        print(f"Successfully built plot-only index! vectors: {index.ntotal} (plot chunks)")
     
+    def build(self):
+        if not os.path.exists(self.EMBED_PATH):
+            _create_embeddings(self.embed_model)
+        
+        print("Creating meta index...")
+        self._build_meta()
+        
+        print("Creating plot index...")
+        self._build_plot()
     
-    def search(self, query: str, top_k: int, top_k_chunks_multiplier: int = 30, return_debug_chunks: bool = False):
+    def search(self, query: str, top_k: int, top_k_chunks_multiplier: int = 30, return_debug_chunks: bool = True):
         """
         Search FAISS by query and return top_k FILMS (aggregated by row_idx), not chunks.
 
@@ -270,17 +227,27 @@ class FaissIndex:
         - row_idx, title, film_score, plot_text, meta_text
         - optionally debug_chunks (if return_debug_chunks=True)
         """
-        if self.index is None or self.metadata is None:
-            raise RuntimeError("Index/metadata is not loaded. Build the index first or check paths.")
-
-        embed_query = self.embed_model.encode([query], prompt_name="query", precision="float32", normalize_embeddings=True)
-        # self.index.nprobe = 10 #XXX hyperparam to play with
+        
+        self._load()
+        
+        #prompt_name="query"
+        embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
         
         top_k_chunks = max(top_k, int(top_k) * int(top_k_chunks_multiplier))
         scores, indices = self.index.search(embed_query, top_k_chunks)
         
+        print(scores)
+        print(indices)
+        
         by_film = {}
+        # results = []
         for score, idx in zip(scores[0], indices[0]):
+            # if idx == -1: continue
+            # results.append({
+            #     "chunk_text": self.metadata[idx]["chunk_text"],
+            #     "similarity": float(score)
+            # })
+            
             if idx == -1:
                 continue
 
@@ -367,6 +334,7 @@ if __name__ == "__main__":
             
             print('='*65)
             for item in res:
+                # print(f"{item["similarity"]} : {item["chunk_text"]}\n")
                 print(f"{item['film_score']} : {item['title']}\n{item['plot_text']}\n{item['meta_text']}\n")
             print('='*65)
             
