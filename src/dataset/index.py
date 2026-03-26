@@ -6,6 +6,7 @@ import yaml, pickle
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from typing import Literal
 from sentence_transformers import SentenceTransformer
 
 def _load_config():
@@ -17,6 +18,8 @@ def _load_config():
         raise FileNotFoundError("ERROR: config not found at config/config.yaml .\n \
                                 ensure you run index.py from project's root directory")
 
+
+# XXX подумать про добавление доп инфы в метадату
 def _create_save_metadata() -> tuple[list, list]:
     config = _load_config()
     DATA_PREP_PATH = config["paths"]["film_data"]
@@ -78,7 +81,7 @@ class FaissIndex:
         self.embed_model = SentenceTransformer(config["models"]["embedding_model"], device=self.device)
         self.embed_size = self.embed_model.get_sentence_embedding_dimension() #768
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
-        self.INDEX_NAME = config["paths"]["faiss_index"]
+        self.INDEX_NAME = "indexes/test_index" #config["paths"]["faiss_index"]
         self.EMBED_PATH = config["paths"]["embeddings"]
         self.METADATA_PATH = config["paths"]["faiss_metadata"]
         self.meta_index = None
@@ -219,94 +222,39 @@ class FaissIndex:
         print("Creating plot index...")
         self._build_plot()
     
-    def search(self, query: str, top_k: int, top_k_chunks_multiplier: int = 30, return_debug_chunks: bool = True):
-        """
-        Search FAISS by query and return top_k FILMS (aggregated by row_idx), not chunks.
-
-        Returns list[dict] with keys:
-        - row_idx, title, film_score, plot_text, meta_text
-        - optionally debug_chunks (if return_debug_chunks=True)
-        """
+    def search(self, type:Literal["meta", "plot"], query:str, top_k:int):
+        if type == "meta":
+            if self.meta_index is None:
+                self._load()
+            assert self.meta_index != None, "No meta_index file!"
+            index = self.meta_index
         
-        self._load()
+        elif type == "plot":
+            if self.plot_index is None:
+                self._load()
+            assert self.plot_index != None, "No plot_index file!"
+            index = self.plot_index
         
-        #prompt_name="query"
         embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
-        
-        top_k_chunks = max(top_k, int(top_k) * int(top_k_chunks_multiplier))
-        scores, indices = self.index.search(embed_query, top_k_chunks)
-        
-        print(scores)
-        print(indices)
-        
-        by_film = {}
-        # results = []
+        scores, indices = index.search(embed_query, top_k)
+
+        results = []
         for score, idx in zip(scores[0], indices[0]):
-            # if idx == -1: continue
-            # results.append({
-            #     "chunk_text": self.metadata[idx]["chunk_text"],
-            #     "similarity": float(score)
-            # })
-            
             if idx == -1:
                 continue
-
-            m = self.metadata[idx]
-            row_idx = m["row_idx"]
-            chunk_type = m.get("chunk_type")
-            s = float(score)
-
-            agg = by_film.get(row_idx)
-            if agg is None:
-                agg = {
-                    "row_idx": int(row_idx),
-                    "title": m.get("title", ""),
-                    "film_score": s,  # max over chunks (initialized)
-                    "plot_best": -1.0,
-                    "meta_best": -1.0,
-                }
-                if return_debug_chunks:
-                    agg["debug_chunks"] = []
-                by_film[row_idx] = agg
-            else:
-                if s > agg["film_score"]:
-                    agg["film_score"] = s
-
-
-            if chunk_type == "plot" and s > agg["plot_best"]:
-                agg["plot_best"] = s
-            elif chunk_type == "meta" and s > agg["meta_best"]:
-                agg["meta_best"] = s
-
-            if return_debug_chunks:
-                agg["debug_chunks"].append(
-                    {"chunk_type": chunk_type, "similarity": s, "chunk_text": m.get("chunk_text", "")}
-                )
-
-        # Sort films by aggregated score
-        ranked = sorted(by_film.values(), key=lambda x: x["film_score"], reverse=True)[:top_k]
-
-        # Always attach BOTH chunks for each film
-        results = []
-        for item in ranked:
+            
+            item = self.metadata[idx]
             title, plot_text, meta_text = self._get_film_chunk_texts(item["row_idx"])
-            out = {
+            
+            results.append({
                 "row_idx": item["row_idx"],
+                "score": score,
                 "title": title,
-                "film_score": float(item["film_score"]),
                 "plot_text": plot_text.split("Plot: ")[1],
                 "meta_text": " | ".join(meta_text.split(" | ")[1:]),
-            }
-            if return_debug_chunks:
-                out["debug_chunks"] = item.get("debug_chunks", [])
-                out["plot_best"] = float(item["plot_best"])
-                out["meta_best"] = float(item["meta_best"])
-            results.append(out)
-        
-        #TODO подумать по поводу постфильтеринга
-        
+            })
+            
         return results
-
 
 if __name__ == "__main__":
     #Adding parser for different index functions
@@ -329,13 +277,13 @@ if __name__ == "__main__":
         faiss_index = FaissIndex()
         quit = False
         while not quit:
+            type_ = input("Type: ")
             query = input("Query: ")
-            res = faiss_index.search(query, top_k=10)
+            res = faiss_index.search(type_, query, top_k=10)
             
             print('='*65)
             for item in res:
-                # print(f"{item["similarity"]} : {item["chunk_text"]}\n")
-                print(f"{item['film_score']} : {item['title']}\n{item['plot_text']}\n{item['meta_text']}\n")
+                print(f"{item['score']} : {item['title']}\n{item['plot_text']}\n{item['meta_text']}\n")
             print('='*65)
             
             choice = input("Quit?(y/n): ")
