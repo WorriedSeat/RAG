@@ -106,10 +106,27 @@ class Dataset_proc:
             os.environ["KAGGLEHUB_CACHE"] = base_data_path
             tmp_path = kagglehub.dataset_download(TMDB_DOWNLOAD_PATH, force_download=True)
                         
-            os.rename(tmp_path+"/"+os.path.basename(self.TMDB_RAW_PATH), self.TMDB_RAW_PATH)
-            tmp_folder_name = tmp_path.split("/")[len(base_data_path.split("/"))]
-            shutil.rmtree(path=base_data_path + "/" + tmp_folder_name)
-            print(f"\tDownloaded in {self.TMDB_RAW_PATH}")
+            # os.rename(tmp_path+"/"+os.path.basename(self.TMDB_RAW_PATH), self.TMDB_RAW_PATH)
+            # tmp_folder_name = tmp_path.split("/")[len(base_data_path.split("/"))]
+            # shutil.rmtree(path=base_data_path + "/" + tmp_folder_name)
+            # print(f"\tDownloaded in {self.TMDB_RAW_PATH}")
+            
+            #XXX kaggle fix
+            downloaded_file = os.path.join(tmp_path, os.path.basename(self.TMDB_RAW_PATH))
+
+            print(f"Downloaded to temporary location: {downloaded_file}")
+
+            # ← Вот здесь была ошибка
+            shutil.move(downloaded_file, self.TMDB_RAW_PATH)
+
+            print(f"Successfully moved to final path: {self.TMDB_RAW_PATH}")
+
+            # Удаляем временную папку (если она больше не нужна)
+            tmp_folder = tmp_path  # или os.path.dirname(tmp_path) в зависимости от структуры
+            if os.path.exists(tmp_folder) and tmp_folder != self.TMDB_RAW_PATH:
+                shutil.rmtree(tmp_folder, ignore_errors=True)
+                print(f"Cleaned up temporary folder: {tmp_folder}")
+            
             
         except Exception as e:
             print(f"ERROR (tmdb-download): {e}")
