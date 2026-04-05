@@ -81,7 +81,7 @@ class FaissIndex:
         self.embed_model = SentenceTransformer(config["models"]["embedding_model"], device=self.device)
         self.embed_size = self.embed_model.get_sentence_embedding_dimension() #768
         self.max_seq_length = self.embed_model.get_max_seq_length() #512
-        self.INDEX_NAME = "indexes/test_index" #config["paths"]["faiss_index"]
+        self.INDEX_NAME = config["paths"]["faiss_index"]
         self.EMBED_PATH = config["paths"]["embeddings"]
         self.METADATA_PATH = config["paths"]["faiss_metadata"]
         self.meta_index = None
@@ -103,16 +103,16 @@ class FaissIndex:
         # Reading meta_index
         if os.path.exists(self.INDEX_NAME + "_meta.ivf"):
             self.meta_index = faiss.read_index(self.INDEX_NAME + "_meta.ivf")
-            print(f"Loaded meta_index: {self.INDEX_NAME + "_meta.ivf"}")
+            print(f"Loaded meta_index: {self.INDEX_NAME + '_meta.ivf'}")
         else:
-            print(f"No meta_index found by path {self.INDEX_NAME + "_meta.ivf"}")
+            print(f"No meta_index found by path {self.INDEX_NAME + '_meta.ivf'}")
         
         # Reading plot_index
         if os.path.exists(self.INDEX_NAME + "_plot.ivf"):
             self.plot_index = faiss.read_index(self.INDEX_NAME + "_plot.ivf")
-            print(f"Loaded plot_index: {self.INDEX_NAME + "_plot.ivf"}")
+            print(f"Loaded plot_index: {self.INDEX_NAME + '_plot.ivf'}")
         else:
-            print(f"No plot_index found by path {self.INDEX_NAME + "_plot.ivf"}")
+            print(f"No plot_index found by path {self.INDEX_NAME + '_plot.ivf'}")
         
         # Reading metadata
         if os.path.exists(self.METADATA_PATH):
@@ -157,21 +157,23 @@ class FaissIndex:
         with h5py.File(self.EMBED_PATH, "r") as hf:
             emb_ds = hf["embeddings"]
             n_total = emb_ds.shape[0]
-            n_meta = (n_total + 1) // 2
+            
+            # Creating a base index
+            base_index = faiss.IndexFlatIP(self.embed_size)
+            index = faiss.IndexIDMap2(base_index)
 
-            # meta vectors are at even indices: 0,2,4,...
-            # Use slicing to avoid loading the full matrix if possible.
-            embeddings_meta = emb_ds[::2].astype("float32")
+            batch_size = 50000
 
-        # Build an ID-mapped index so returned ids correspond to original
-        # positions in `self.metadata`.
-        base_index = faiss.IndexFlatIP(self.embed_size)
-        index = faiss.IndexIDMap2(base_index)
+            print(f"Adding plot embeddings with original IDs (batch_size={batch_size})...")
 
-        # Add with original ids (even indices)
-        ids = np.arange(0, n_total, 2, dtype=np.int64)
-        index.add_with_ids(embeddings_meta, ids)
+            for i in tqdm(range(0, n_total, 2 * batch_size)):
+                end = min(i + batch_size * 2, n_total)
+                
+                batch_emb = emb_ds[i:end:2].astype("float32")
+                batch_ids = np.arange(i, end, 2, dtype=np.int64)
 
+                index.add_with_ids(batch_emb, batch_ids)
+        
         print(f"Saving metadata-only index to: {index_path}")
         faiss.write_index(index, index_path)
         print(f"Successfully built meta-only index! vectors: {index.ntotal} (meta chunks)")  
@@ -193,20 +195,22 @@ class FaissIndex:
         with h5py.File(self.EMBED_PATH, "r") as hf:
             emb_ds = hf["embeddings"]
             n_total = emb_ds.shape[0]
-            n_plot = (n_total + 1) // 2
 
-            # plot vectors are at odd indices: 1,3,5,...
-            # Use slicing to avoid loading the full matrix if possible.
-            embeddings_plot = emb_ds[1::2].astype("float32")
+            # Creating base index
+            base_index = faiss.IndexFlatIP(self.embed_size)
+            index = faiss.IndexIDMap2(base_index)
 
-        # Build an ID-mapped index so returned ids correspond to original
-        # positions in `self.metadata`.
-        base_index = faiss.IndexFlatIP(self.embed_size)
-        index = faiss.IndexIDMap2(base_index)
+            batch_size = 50000
 
-        # Add with original ids (odd indices)
-        ids = np.arange(1, n_total, 2, dtype=np.int64)
-        index.add_with_ids(embeddings_plot, ids)
+            print(f"Adding plot embeddings with original IDs (batch_size={batch_size})...")
+
+            for i in tqdm(range(1, n_total, 2 * batch_size)):
+                end = min(i + batch_size * 2, n_total)
+                
+                batch_emb = emb_ds[i:end:2].astype("float32")
+                batch_ids = np.arange(i, end, 2, dtype=np.int64)
+
+                index.add_with_ids(batch_emb, batch_ids)
 
         print(f"Saving plot-only index to: {index_path}")
         faiss.write_index(index, index_path)

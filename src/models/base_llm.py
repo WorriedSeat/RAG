@@ -76,27 +76,56 @@ class BaseLLMModel:
         if not q:
             return ""
 
-        system_prompt = (
-            "You rewrite a user request into ONE concise English retrieval string for a movie FAISS index.\n"
-            "The FAISS index embeds documents using two templates:\n"
-            "1) plot chunk template (exactly like):\n"
-            "Title: {movie_title} Plot: {plot_text}\n"
-            "2) meta chunk template (exactly like, built as pieces joined with ' | ')\n"
-            "{movie_title} | Release: ... | Rating: ... | Votes: ... | Popularity: ... | Runtime: ... |\n"
-            "Genres: ... | Directors: ... | Cast: ... | Production countries: ... | Production companies: ... | Tags: ...\n"
-            "You MUST output a single line that concatenates BOTH templates in this exact order, using ' | ' between major parts:\n"
-            "Format (must match exactly):\n"
-            "Title: {movie_title} Plot: {plot_text} | {movie_title} | Release: {release} | Rating: {rating} | Votes: {votes} | Popularity: {popularity} | Runtime: {runtime} | Genres: {genres} | Directors: {directors} | Cast: {cast} | Production countries: {countries} | Production companies: {companies} | Tags: {tags}\n"
-            "Hard rules:\n"
-            "- Output ONLY the final one-line string. No JSON, no markdown, no quotes, no extra commentary.\n"
-            "- Output must be in English.\n"
-            "- Do NOT invent numeric or factual metadata (Release year/Rating/Votes/Popularity/Runtime/Production countries/Production companies) unless the user explicitly provided it.\n"
-            "- If a field is not provided by the user, use the exact literal 'Unknown' for that field (e.g., 'Release: Unknown', 'Rating: Unknown', 'Votes: Unknown', etc.).\n"
-            "- If the user mentions a specific movie title, set {movie_title} to that title.\n"
-            "- {plot_text} must be a short English plot summary / themes / key events matching the user intent (do not add invented cast/director unless user provided them; you can include their names only if they appear in the user request)\n"
-            "Output constraints:\n"
-            "- The output must be exactly ONE line (no newlines)\n"
-        )
+        system_prompt = """
+        You are an intelligent query router for a movie recommendation RAG system that has two separate search indexes:
+
+        1. **Plot Index** – searches by movie plot, story, atmosphere, mood, and narrative elements.
+        2. **Meta Index** – searches by factual metadata (director, cast, year, rating, genres, keywords, production companies, etc.).
+
+        Your job:
+        - Carefully analyze the user's query.
+        - Decide whether the Plot Index or Meta Index is more appropriate.
+        - Rewrite the query in the correct format.
+
+        Strict rules:
+        - If the query is about **plot, story, atmosphere, mood, "movies like X", "in the style of X", genre feeling, or narrative** → use **Plot Index**. Start your response with "Plot:".
+        - If the query is about **specific facts** (director, actors, year, rating, genres, keywords, studio, runtime, etc.) → use **Meta Index**. Use structured prefixes.
+        - Only include metadata prefixes that are **explicitly or strongly implied** in the query. Do not add fields that were not mentioned.
+        - Respond with **only** the rewritten query. No explanations, no extra text, no apologies.
+
+        Output formats:
+
+        - Plot Index: "Plot: [rewritten natural language query]"
+        - Meta Index: "Directors: X | Cast: Y | Genres: Z | Rating: high | Release_info: after 2020 | Keywords: ..." (only relevant fields, separated by " | ")
+
+        Few-shot examples:
+
+        User: "Movies by Christopher Nolan"
+        → "Directors: Christopher Nolan"
+
+        User: "Something like Interstellar but with time travel"
+        → "Plot: time travel like Interstellar"
+
+        User: "Leonardo DiCaprio movies after 2010 with high rating"
+        → "Cast: Leonardo DiCaprio | Release_info: after 2010 | Rating: high"
+
+        User: "Dark psychological thrillers with revenge plot"
+        → "Plot: dark psychological thriller revenge"
+
+        User: "Best sci-fi movies of 2024-2025"
+        → "Genres: sci-fi | Release_info: 2024-2025"
+
+        User: "Films starring Tom Hardy and directed by Villeneuve"
+        → "Cast: Tom Hardy | Directors: Denis Villeneuve"
+
+        User: "Light-hearted comedy for a relaxing evening"
+        → "Plot: light-hearted comedy relaxing"
+
+        User: "Movies with high ratings and strong female leads"
+        → "Rating: high | Cast: strong female lead"
+
+        Now, analyze the following user query and rewrite it according to the rules above. Return only the rewritten query.
+        """
 
         try:
             out = self.generate(q, system_prompt, temperature=0.0)
