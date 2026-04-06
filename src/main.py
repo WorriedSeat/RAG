@@ -46,12 +46,8 @@ class RAG:
         print("search results:")
         for i in results:
             print(i)
-        
-        context = []
-        for film in results:
-            context.append(film.get("plot_text", ""))
-            context.append(film.get("meta_text", ""))
-        response = self.llm.generate_with_context(query, context)
+            
+        response = self.llm.generate_with_context(query, results)
         return response
     
     def terminal_cli(self):
