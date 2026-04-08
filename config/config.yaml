@@ -1,5 +1,5 @@
 data_preprocessing:
-  min_overview_words: 6
+  min_overview_words: 15
   max_overview_words: 169
   top_cast: 10
   top_keywords: 10
@@ -13,12 +13,13 @@ paths:
   embeddings: "data/prep/embeddings_full_snowflake.npy"
   faiss_index: "indexes/index_FlatIP"
   faiss_metadata: "indexes/faiss_metadata.pkl"
+  bm25_index: "indexes/bm25_meta"
 
 models:
   embedding_model: "Snowflake/snowflake-arctic-embed-m"
-  llm_repo: "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
-  llm_filename: "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
-  chat_format: "mistral-instruct"
+  llm_repo: "bartowski/Llama-3.2-3B-Instruct-GGUF"
+  llm_filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+  chat_format: "llama-3"
 
 llm_params:
   n_ctx: 2048

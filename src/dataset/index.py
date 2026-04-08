@@ -1,4 +1,4 @@
-import os, argparse
+import os, re, argparse
 import torch
 import h5py
 import faiss
@@ -8,6 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 from typing import Literal
 from sentence_transformers import SentenceTransformer
+import bm25s
 
 def _load_config():
     if os.path.exists("config/config.yaml"):
@@ -87,6 +88,9 @@ class FaissIndex:
         self.meta_index = None
         self.plot_index = None
         self.metadata = None
+        self.bm25_index = None
+        self.bm25_row_ids = None
+        self.BM25_PATH = config["paths"]["bm25_index"]
         
         print(
             "Created index instance:\n"
@@ -100,29 +104,95 @@ class FaissIndex:
         print("_"*50)
 
     def _load(self):
-        # Reading meta_index
-        if os.path.exists(self.INDEX_NAME + "_meta.ivf"):
-            self.meta_index = faiss.read_index(self.INDEX_NAME + "_meta.ivf")
-            print(f"Loaded meta_index: {self.INDEX_NAME + '_meta.ivf'}")
-        else:
-            print(f"No meta_index found by path {self.INDEX_NAME + '_meta.ivf'}")
-        
-        # Reading plot_index
+        # Reading plot_index (meta search now uses BM25)
         if os.path.exists(self.INDEX_NAME + "_plot.ivf"):
             self.plot_index = faiss.read_index(self.INDEX_NAME + "_plot.ivf")
             print(f"Loaded plot_index: {self.INDEX_NAME + '_plot.ivf'}")
         else:
             print(f"No plot_index found by path {self.INDEX_NAME + '_plot.ivf'}")
-        
-        # Reading metadata
+
+        # Reading metadata (needed for plot search and BM25 result lookup)
         if os.path.exists(self.METADATA_PATH):
             with open(self.METADATA_PATH, "rb") as f:
-                self.metadata = pickle.load(f)  
-            
+                self.metadata = pickle.load(f)
             print(f"Loaded metadata: {self.METADATA_PATH}")
         else:
             print(f"No metadata found by path {self.METADATA_PATH}")
 
+        # Loading BM25 meta index
+        self._load_bm25()
+
+
+    @staticmethod
+    def _tokenize(text: str) -> list[str]:
+        """Lowercase, remove pipe/colon/punctuation, split on whitespace."""
+        text = text.lower()
+        text = re.sub(r"[|:,\.\(\)]", " ", text)
+        return [t for t in text.split() if t]
+
+    def _build_bm25(self):
+        """Build BM25 index from meta chunks and save to disk."""
+        if not os.path.exists(self.METADATA_PATH):
+            _, _ = _create_save_metadata()
+
+        with open(self.METADATA_PATH, "rb") as f:
+            metadata = pickle.load(f)
+
+        corpus_texts = []
+        row_ids = []
+        for item in tqdm(metadata, desc="Collecting meta chunks"):
+            if item["chunk_type"] == "meta":
+                corpus_texts.append(item["chunk_text"])
+                row_ids.append(item["row_idx"])
+
+        print("Tokenizing corpus...")
+        corpus_tokens = bm25s.tokenize(corpus_texts, stopwords="en", show_progress=True)
+
+        print("Fitting BM25...")
+        retriever = bm25s.BM25()
+        retriever.index(corpus_tokens, show_progress=True)
+
+        os.makedirs(self.BM25_PATH, exist_ok=True)
+        retriever.save(self.BM25_PATH)
+        with open(os.path.join(self.BM25_PATH, "row_ids.pkl"), "wb") as f:
+            pickle.dump(row_ids, f)
+        print(f"BM25 index saved to {self.BM25_PATH}")
+
+        self.bm25_index = retriever
+        self.bm25_row_ids = row_ids
+
+    def _load_bm25(self):
+        """Load BM25 index from disk, or build it if missing."""
+        if not os.path.exists(self.BM25_PATH):
+            print("BM25 index not found, building (this may take a few minutes)...")
+            self._build_bm25()
+            return
+
+        self.bm25_index = bm25s.BM25.load(self.BM25_PATH, load_corpus=False)
+        with open(os.path.join(self.BM25_PATH, "row_ids.pkl"), "rb") as f:
+            self.bm25_row_ids = pickle.load(f)
+        print(f"Loaded BM25 index: {self.BM25_PATH} ({len(self.bm25_row_ids):,} docs)")
+
+    def _search_bm25(self, query: str, top_k: int) -> list[dict]:
+        """BM25 search over meta corpus. Returns same result format as FAISS search."""
+        query_tokens = bm25s.tokenize([query], stopwords="en", show_progress=False)
+        results, scores = self.bm25_index.retrieve(query_tokens, k=top_k)
+
+        output = []
+        for bm25_pos, score in zip(results[0], scores[0]):
+            if float(score) == 0.0:
+                continue
+            row_idx = self.bm25_row_ids[int(bm25_pos)]
+            title, plot_text, meta_text = self._get_film_chunk_texts(row_idx)
+            output.append({
+                "row_idx": row_idx,
+                "score": float(score),
+                "title": title,
+                "plot_text": plot_text.split("Plot: ", 1)[-1],
+                "meta_text": " | ".join(meta_text.split(" | ")[1:]),
+            })
+
+        return output
 
     def _get_film_chunk_texts(self, row_idx: int) -> tuple[str, str, str]:
         """
@@ -217,48 +287,47 @@ class FaissIndex:
         print(f"Successfully built plot-only index! vectors: {index.ntotal} (plot chunks)")
     
     def build(self):
-        if not os.path.exists(self.EMBED_PATH):
-            _create_embeddings(self.embed_model)
-        
-        print("Creating meta index...")
-        self._build_meta()
-        
-        print("Creating plot index...")
-        self._build_plot()
+        print("Creating BM25 meta index...")
+        self._build_bm25()
+
+        plot_path = self.INDEX_NAME + "_plot.ivf"
+        if os.path.exists(plot_path):
+            print(f"Plot index already exists at {plot_path}, skipping.")
+        else:
+            if not os.path.exists(self.EMBED_PATH):
+                _create_embeddings(self.embed_model)
+            print("Creating plot index...")
+            self._build_plot()
     
-    def search(self, type:Literal["meta", "plot"], query:str, top_k:int):
+    def search(self, type: Literal["meta", "plot"], query: str, top_k: int):
         if type == "meta":
-            if self.meta_index is None:
-                self._load()
-            assert self.meta_index != None, "No meta_index file!"
-            index = self.meta_index
-        
+            if self.bm25_index is None:
+                self._load_bm25()
+            return self._search_bm25(query, top_k)
+
         elif type == "plot":
             if self.plot_index is None:
                 self._load()
-            assert self.plot_index != None, "No plot_index file!"
-            index = self.plot_index
-        
-        embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
-        scores, indices = index.search(embed_query, top_k)
+            assert self.plot_index is not None, "No plot_index file!"
 
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx == -1:
-                continue
-            
-            item = self.metadata[idx]
-            title, plot_text, meta_text = self._get_film_chunk_texts(item["row_idx"])
-            
-            results.append({
-                "row_idx": item["row_idx"],
-                "score": score,
-                "title": title,
-                "plot_text": plot_text.split("Plot: ")[1],
-                "meta_text": " | ".join(meta_text.split(" | ")[1:]),
-            })
-            
-        return results
+            embed_query = self.embed_model.encode([query], precision="float32", normalize_embeddings=True)
+            scores, indices = self.plot_index.search(embed_query, top_k)
+
+            results = []
+            for score, idx in zip(scores[0], indices[0]):
+                if idx == -1:
+                    continue
+                item = self.metadata[idx]
+                title, plot_text, meta_text = self._get_film_chunk_texts(item["row_idx"])
+                results.append({
+                    "row_idx": item["row_idx"],
+                    "score": float(score),
+                    "title": title,
+                    "plot_text": plot_text.split("Plot: ", 1)[-1],
+                    "meta_text": " | ".join(meta_text.split(" | ")[1:]),
+                })
+
+            return results
 
 if __name__ == "__main__":
     #Adding parser for different index functions

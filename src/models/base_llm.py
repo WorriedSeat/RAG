@@ -76,56 +76,35 @@ class BaseLLMModel:
         if not q:
             return ""
 
-        system_prompt = """
-        You are an intelligent query router for a movie recommendation RAG system that has two separate search indexes:
+        system_prompt = """You rewrite movie search queries into a structured format. There are two indexes:
+- Plot Index: for story, mood, atmosphere, themes, "movies like X"
+- Meta Index: for facts — specific person names (actors/directors), years, genres as filters, ratings, studios
 
-        1. **Plot Index** – searches by movie plot, story, atmosphere, mood, and narrative elements.
-        2. **Meta Index** – searches by factual metadata (director, cast, year, rating, genres, keywords, production companies, etc.).
+PRIORITY RULES (apply in order):
+1. Query mentions a SPECIFIC PERSON'S NAME (actor or director) → ALWAYS use Cast: or Directors:
+2. Query mentions a SPECIFIC YEAR or DECADE → use Release_info:
+3. Query mentions a SPECIFIC RATING (high rated, Oscar-winning, etc.) → use Rating:
+4. Query mentions a GENRE as a hard filter (not as mood/vibe) → use Genres:
+5. Everything else (vibes, moods, "like X movie", story themes, atmosphere) → use Plot:
 
-        Your job:
-        - Carefully analyze the user's query.
-        - Decide whether the Plot Index or Meta Index is more appropriate.
-        - Rewrite the query in the correct format.
+Output formats:
+- Plot: "Plot: [natural language query]"
+- Meta: "Directors: X" or "Cast: X" or "Genres: X | Release_info: Y" — only include relevant fields, separated by " | "
 
-        Strict rules:
-        - If the query is about **plot, story, atmosphere, mood, "movies like X", "in the style of X", genre feeling, or narrative** → use **Plot Index**. Start your response with "Plot:".
-        - If the query is about **specific facts** (director, actors, year, rating, genres, keywords, studio, runtime, etc.) → use **Meta Index**. Use structured prefixes.
-        - Only include metadata prefixes that are **explicitly or strongly implied** in the query. Do not add fields that were not mentioned.
-        - Respond with **only** the rewritten query. No explanations, no extra text, no apologies.
+Examples:
+User: "Movies by Christopher Nolan" → Directors: Christopher Nolan
+User: "Films with Jeff Goldblum" → Cast: Jeff Goldblum
+User: "Jeff Goldblum movies" → Cast: Jeff Goldblum
+User: "Leonardo DiCaprio after 2010 with high rating" → Cast: Leonardo DiCaprio | Release_info: after 2010 | Rating: high
+User: "Animated films released after 2020" → Genres: Animation | Release_info: after 2020
+User: "Sci-fi movies of 2023" → Genres: sci-fi | Release_info: 2023
+User: "Something like Interstellar but more emotional" → Plot: emotional space drama like Interstellar
+User: "Funny movie like Wedding Crashers" → Plot: comedy like Wedding Crashers
+User: "Cult classic like The Room" → Plot: cult classic absurdist like The Room
+User: "Dark psychological thriller" → Plot: dark psychological thriller
+User: "Good thriller with a twist ending" → Plot: thriller with twist ending
 
-        Output formats:
-
-        - Plot Index: "Plot: [rewritten natural language query]"
-        - Meta Index: "Directors: X | Cast: Y | Genres: Z | Rating: high | Release_info: after 2020 | Keywords: ..." (only relevant fields, separated by " | ")
-
-        Few-shot examples:
-
-        User: "Movies by Christopher Nolan"
-        → "Directors: Christopher Nolan"
-
-        User: "Something like Interstellar but with time travel"
-        → "Plot: time travel like Interstellar"
-
-        User: "Leonardo DiCaprio movies after 2010 with high rating"
-        → "Cast: Leonardo DiCaprio | Release_info: after 2010 | Rating: high"
-
-        User: "Dark psychological thrillers with revenge plot"
-        → "Plot: dark psychological thriller revenge"
-
-        User: "Best sci-fi movies of 2024-2025"
-        → "Genres: sci-fi | Release_info: 2024-2025"
-
-        User: "Films starring Tom Hardy and directed by Villeneuve"
-        → "Cast: Tom Hardy | Directors: Denis Villeneuve"
-
-        User: "Light-hearted comedy for a relaxing evening"
-        → "Plot: light-hearted comedy relaxing"
-
-        User: "Movies with high ratings and strong female leads"
-        → "Rating: high | Cast: strong female lead"
-
-        Now, analyze the following user query and rewrite it according to the rules above. Return only the rewritten query.
-        """
+Return ONLY the rewritten query. No explanation, no extra text."""
 
         try:
             out = self.generate(q, system_prompt, temperature=0.0)

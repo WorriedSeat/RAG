@@ -10,3 +10,4 @@ torch
 accelerate
 llama-cpp-python
 h5py
+bm25s

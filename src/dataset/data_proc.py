@@ -1,4 +1,5 @@
 import os
+import unicodedata
 import yaml, json
 import kagglehub
 import shutil, requests
@@ -41,6 +42,21 @@ class Dataset_proc:
     
     def _clear_title(self, title: str):
         return title if any(c.isalpha() for c in title) else ""
+
+    def _is_junk_title(self, title: str) -> bool:
+        if not title:
+            return True
+        has_latin = any(
+            unicodedata.category(c) in ('Ll', 'Lu', 'Nd') and ord(c) < 256
+            for c in title
+        )
+        has_junk = any(
+            unicodedata.category(c).startswith('So') or
+            (0x4E00 <= ord(c) <= 0x9FFF) or   # CJK
+            (0x3040 <= ord(c) <= 0x30FF)        # hiragana/katakana
+            for c in title
+        )
+        return not has_latin or has_junk
     
     def _process_meta_info(self, row):
         meta_parts = []
@@ -91,7 +107,13 @@ class Dataset_proc:
             if len(keywords) >= 3:
                 kw_str = ", ".join([k for k in keywords[:self.TOP_KEYWORDS]])
                 meta_parts.append(f"Tags: {kw_str}")
-        
+
+        #Rating
+        vote_avg = row.get("vote_average")
+        vote_cnt = row.get("vote_count")
+        if pd.notna(vote_avg) and vote_avg > 0 and pd.notna(vote_cnt) and vote_cnt > 0:
+            meta_parts.append(f"Rating: {vote_avg:.1f}/10 ({int(vote_cnt)} votes)")
+
         return " | ".join(meta_parts)
     
     def download_raw_data(self):
@@ -214,27 +236,42 @@ class Dataset_proc:
         merged.dropna(subset=["title"], inplace=True)
         merged["title"] = merged["title"].apply(self._clear_title)
         merged.drop(merged[merged["title"].isin([" ", ""])].index, inplace=True)
-        
+
+        #Dropping junk titles (emojis, hieroglyphs, no Latin characters)
+        merged = merged[~merged["title"].apply(self._is_junk_title)]
+
         #Dropping nans and too small/too big overviews
         merged.dropna(subset=["overview"], inplace=True, ignore_index=True)
-        
+
         merged["overview_length"] = merged["overview"].apply(lambda x: len(x.split()))
         merged.drop(merged[merged["overview_length"] < self.MIN_OVERVIEW_WORDS].index, inplace=True)
         merged.reset_index(drop=True, inplace=True)
-        
+
         merged["overview"] = merged["overview"].apply(self._truncate_overview)
-        
-        merged.drop("overview_length", axis=1, inplace=True)
-        
+
         #Dropping adult titles
         merged.drop(merged[merged["adult"] == True].index, inplace=True)
         merged.drop("adult", axis=1, inplace=True)
-        
-        cols = ["vote_average", "vote_count", "popularity", "runtime", "genres", "directors", "cast", "production_companies", "production_countries", "keywords"]
-        mask = (merged[cols].isin([0]) | merged[cols].isna()).all(axis=1)
-        merged = merged[~mask]
-        
-        # merged.drop_duplicates(subset=[["title", "release_info"]], inplace=True)
+
+        #Dropping films with no meta at all (genres, directors and cast all missing)
+        mask_no_meta = (
+            merged["genres"].isna() &
+            merged["directors"].isna() &
+            merged["cast"].isna()
+        )
+        merged = merged[~mask_no_meta]
+
+        #Dropping weak-signal films with poor descriptions
+        mask_weak = (
+            (merged["vote_count"] < 5) &
+            (merged["overview_length"] < 20)
+        )
+        merged = merged[~mask_weak]
+
+        merged.drop("overview_length", axis=1, inplace=True)
+
+        #Deduplicating by title and release info
+        merged.drop_duplicates(subset=["title", "release_info"], inplace=True)
         merged.reset_index(drop=True, inplace=True)
         
         #Creating descriptions for embeddings
