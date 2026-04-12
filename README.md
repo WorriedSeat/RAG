@@ -14,7 +14,7 @@ This project develops a RAG system for recommending movies.
 - [Authors](#authors)
 
 ## Project Overview
-This project implements a Retrieval-Augmented Generation (RAG) system for personalized movie recommendations. The system combines data from multiple sources to build a comprehensive movie database, uses Snowflake embedding model and FAISS for efficient retrieval of relevant films based on user queries, and generates natural language responses using a lightweight LLM Mistral-7B-Instruct-v0.1.
+This project implements a Retrieval-Augmented Generation (RAG) system for personalized movie recommendations. The system combines data from multiple sources to build a comprehensive movie database, uses Snowflake embedding model and FAISS for efficient retrieval of relevant films based on user queries, and generates natural language responses using a lightweight LLM Llama-3.2-3B-Instruct.
 
 ### Why This Project?
 <!-- write something cool about the problems that project solves -->
