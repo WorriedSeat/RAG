@@ -210,3 +210,6 @@ __marimo__/
 
 data/prep
 data/raw
+indexes/*.pkl
+indexes/*.ivf
+indexes/bm25_meta
