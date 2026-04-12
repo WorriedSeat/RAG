@@ -139,14 +139,17 @@ Return ONLY the rewritten query. No explanation, no extra text."""
 
         system_prompt = (
             f"You are a movie recommendation assistant.\n"
-            f"The search returned exactly {len(films)} films from the database. "
-            f"You MUST recommend ONLY from this list: {titles_list}.\n"
-            f"Do NOT mention, invent, or suggest any film outside this list.\n\n"
+            f"You have {len(films)} films from the database that may match the user's request: {titles_list}.\n"
+            f"Do NOT recommend films the user has already mentioned in their message.\n\n"
             "Rules:\n"
-            "- Recommend only films from the list above.\n"
-            "- For each recommendation include the exact title and a short reason why it matches the query.\n"
-            "- If none of the films fit the query well, say so honestly.\n\n"
-            f"Film details:\n{context_text}"
+            "1. First, check the database films below. If 1-2 of them are a good fit, recommend those.\n"
+            "2. If the database films are a weak or partial match, recommend the best one from the list AND supplement with 1 film from your own knowledge that fits better.\n"
+            "3. If none of the database films are relevant, ignore the list entirely and recommend 1-2 films from your own knowledge.\n"
+            "4. Decide how many films to recommend based on the request: recommend 1 film if the request is very specific (exact mood, niche genre, or 'something like X'), recommend 2-3 films if the request is broad or open-ended (e.g. 'good action movies', 'comedies to watch tonight').\n"
+            "5. For each recommendation give the exact title and 1-2 sentences on why it fits the request.\n"
+            "6. Present all recommendations as a single unified list. Do NOT separate or label films by source (do not write 'from the database', 'from my knowledge', 'I also recommend', etc.).\n"
+            "7. Never apologize for results or say you cannot find a match.\n\n"
+            f"Database film details:\n{context_text}"
         )
 
         return self.generate(query, system_prompt=system_prompt, temperature=0.1)
