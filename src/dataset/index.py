@@ -19,8 +19,6 @@ def _load_config():
         raise FileNotFoundError("ERROR: config not found at config/config.yaml .\n \
                                 ensure you run index.py from project's root directory")
 
-
-# XXX подумать про добавление доп инфы в метадату
 def _create_save_metadata() -> tuple[list, list]:
     config = _load_config()
     DATA_PREP_PATH = config["paths"]["film_data"]
@@ -85,7 +83,6 @@ class FaissIndex:
         self.INDEX_NAME = config["paths"]["faiss_index"]
         self.EMBED_PATH = config["paths"]["embeddings"]
         self.METADATA_PATH = config["paths"]["faiss_metadata"]
-        self.meta_index = None
         self.plot_index = None
         self.metadata = None
         self.bm25_index = None
@@ -208,45 +205,7 @@ class FaissIndex:
         
         # Prefer title from meta (same as plot), but keep robust.
         title = meta.get("title") or plot.get("title") or ""
-        return title, plot.get("chunk_text", ""), meta.get("chunk_text", "")
-
-    def _build_meta(self, index_path: str | None = None):
-
-        if index_path is None:
-            index_path = self.INDEX_NAME + "_meta.ivf"
-
-        # Ensure metadata exists in memory (full chunk list)
-        if not os.path.exists(self.METADATA_PATH):
-            _, _ = _create_save_metadata()
-
-        # Reload metadata as well (for runtime consistency)
-        with open(self.METADATA_PATH, "rb") as f:
-            self.metadata = pickle.load(f)
-
-        print("Loading embeddings (meta only)...")
-        with h5py.File(self.EMBED_PATH, "r") as hf:
-            emb_ds = hf["embeddings"]
-            n_total = emb_ds.shape[0]
-            
-            # Creating a base index
-            base_index = faiss.IndexFlatIP(self.embed_size)
-            index = faiss.IndexIDMap2(base_index)
-
-            batch_size = 50000
-
-            print(f"Adding plot embeddings with original IDs (batch_size={batch_size})...")
-
-            for i in tqdm(range(0, n_total, 2 * batch_size)):
-                end = min(i + batch_size * 2, n_total)
-                
-                batch_emb = emb_ds[i:end:2].astype("float32")
-                batch_ids = np.arange(i, end, 2, dtype=np.int64)
-
-                index.add_with_ids(batch_emb, batch_ids)
-        
-        print(f"Saving metadata-only index to: {index_path}")
-        faiss.write_index(index, index_path)
-        print(f"Successfully built meta-only index! vectors: {index.ntotal} (meta chunks)")  
+        return title, plot.get("chunk_text", ""), meta.get("chunk_text", "")  
     
     def _build_plot(self, index_path: str | None = None):
         

@@ -182,9 +182,6 @@ class Dataset_proc:
             suffixes=("_tmdb", "_lb")
         )
 
-        #Deduplicating by title_norm
-        # merged = merged.drop_duplicates(subset=["title_norm"], keep="first")
-
         #Removing temp columns
         merged = merged.drop(columns=["title_norm"], errors="ignore")
         merged.reset_index(drop=True, inplace=True)
