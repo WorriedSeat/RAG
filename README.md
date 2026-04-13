@@ -1,5 +1,5 @@
 # RAG
-<!-- [![Docker](https://img.shields.io/badge/Docker-Enabled-blue)](https://www.docker.com/) -->
+[![Docker](https://img.shields.io/badge/Docker-Enabled-blue)](https://www.docker.com/)
 
 This project develops a RAG system for recommending movies. 
 
@@ -8,6 +8,7 @@ This project develops a RAG system for recommending movies.
 - [Features](#features)
 - [Structure](#structure)
 - [Inference](#inference)
+- [Docker](#docker)
 - [Models](#models)
 - [Data](#data)
 - [Search Index](#index)
@@ -20,23 +21,41 @@ This project implements a Retrieval-Augmented Generation (RAG) system for person
 <!-- write something cool about the problems that project solves -->
 
 ## Features
-<!-- write some cool stuff used in project -->
+- **Dual retrieval strategy**: semantic search via FAISS + keyword search via BM25, selected automatically by query type
+- **Query rewriting**: meta-queries (director / cast / genre) are restructured by the LLM before retrieval
+- **Lightweight local inference**: Llama-3.2-3B-Instruct (Q4_K_M GGUF) — no external API required
+- **Web UI + REST API**: Streamlit chat interface backed by FastAPI, ready for local or Docker deployment
 
 ## Structure
 ```
-data/
-├── raw/                       # Raw downloaded & extracted data
-│   ├── full_dump.jsonl                 # letter-box film dataset
-│   ├── TMDBP_movie_dataset_v11.csv     # TMDB film dataset
-│   └── ...                             # ... user-queries dataset
-│       
-│
-└── prep/                      # Preprocessed data & search index & test data
-    ├── film_data.csv                   # Preprocessed film dataset with descriptions for embedding model
-    ├── faiss_index.ivf                 # FAISS search index
-    ├── faiss_metadata.pkl              # FAISS metadata
-    └── ...                             # Test user queries
-
+RAG/
+├── config/
+│   └── config.yaml                     # All hyperparameters and paths
+├── data/
+│   ├── raw/                            # Raw downloaded datasets (gitignored)
+│   │   ├── full_dump.jsonl             # Letterboxd dataset
+│   │   └── TMDB_movie_dataset_v11.csv  # TMDB dataset
+│   └── prep/                           # Preprocessed data (gitignored)
+│       ├── film_data.csv               # Cleaned & merged film records
+│       └── embeddings_full_snowflake.npy
+├── indexes/                            # Search indexes (gitignored)
+│   ├── index_FlatIP_plot.ivf           # FAISS plot index
+│   ├── faiss_metadata.pkl
+│   └── bm25_meta/                      # BM25 metadata index
+├── src/
+│   ├── dataset/
+│   │   ├── data_proc.py                # Download & preprocess datasets
+│   │   └── index.py                    # Build FAISS + BM25 indexes
+│   ├── deployment/
+│   │   ├── api/api.py                  # FastAPI backend
+│   │   └── app/app.py                  # Streamlit frontend
+│   ├── models/
+│   │   └── base_llm.py                 # Llama-3.2 wrapper
+│   └── main.py                         # RAG orchestration
+├── eval.py                             # Evaluation script
+├── Dockerfile
+├── docker-compose.yaml
+└── requirements.txt
 ```
 
 ## Inference
@@ -49,13 +68,49 @@ python3 src/main.py
 Note that this code executes only when all necessary files are present
 
 ### Inference app
-In dev...
+Run the FastAPI backend and Streamlit UI separately:
+
+```bash
+# Terminal 1 — API server (from project root)
+uvicorn src.deployment.api.api:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Streamlit UI
+streamlit run src/deployment/app/app.py
+```
+
+Open [http://localhost:8501](http://localhost:8501) in your browser.
+
+## Docker
+
+> Requires `indexes/` and `data/prep/` to be present locally before starting.
+
+```bash
+docker compose up --build
+```
+
+| Service | URL |
+|---------|-----|
+| Streamlit UI | http://localhost:8501 |
+| FastAPI (REST) | http://localhost:8000 |
+| Health check | http://localhost:8000/health |
+
+The first startup downloads the embedding model and Llama-3.2 GGUF (~2 GB total) into a named Docker volume (`hf_cache`). Subsequent starts reuse the cache.
+
+**Rebuild after code changes:**
+```bash
+docker compose up --build
+```
+
+**Run only the API (no UI):**
+```bash
+docker compose up api
+```
 
 ## Models
 In our project we use the following models: 
 - **Embedding model**- [Snowflake](https://huggingface.co/Snowflake/snowflake-arctic-embed-m)
   0.1B model is the smallest one which show great results in the native RAG tasks () according to [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
-- **Base LLM**- 
+- **Base LLM** — [Llama-3.2-3B-Instruct](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) (Q4_K_M GGUF quantization via `llama-cpp-python`). Runs fully on CPU, no GPU required.
 
 ## Data
 1. [Source](#source)

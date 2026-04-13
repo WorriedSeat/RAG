@@ -1,0 +1,17 @@
+.venv/
+.git/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Large data artifacts — mounted as volumes at runtime
+data/
+indexes/
+*.gguf
+*.npy
+
+# Dev/test files
+eval.py
+.env
