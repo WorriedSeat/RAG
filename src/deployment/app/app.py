@@ -1,8 +1,10 @@
+import os
+
 import streamlit as st
 import requests
 from datetime import datetime
 
-API_BASE = "http://localhost:8000"
+API_BASE = os.environ.get("API_BASE", "http://localhost:8000")
 CHAT_URL = f"{API_BASE}/chat"
 RELOAD_URL = f"{API_BASE}/reload"
 
