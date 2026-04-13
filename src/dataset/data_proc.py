@@ -53,7 +53,7 @@ class Dataset_proc:
         has_junk = any(
             unicodedata.category(c).startswith('So') or
             (0x4E00 <= ord(c) <= 0x9FFF) or   # CJK
-            (0x3040 <= ord(c) <= 0x30FF)        # hiragana/katakana
+            (0x3040 <= ord(c) <= 0x30FF)      # hiragana/katakana
             for c in title
         )
         return not has_latin or has_junk
