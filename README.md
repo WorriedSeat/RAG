@@ -11,7 +11,9 @@ This project develops a RAG system for recommending movies.
 - [Docker](#docker)
 - [Models](#models)
 - [Data](#data)
-- [Search Index](#index)
+- [Search system](#search-system)
+- [LLM](#llm)
+- [RAG](#rag-system)
 - [Authors](#authors)
 
 ## Project Overview
@@ -24,7 +26,7 @@ This project implements a Retrieval-Augmented Generation (RAG) system for person
 - **Dual retrieval strategy**: semantic search via FAISS + keyword search via BM25, selected automatically by query type
 - **Query rewriting**: meta-queries (director / cast / genre) are restructured by the LLM before retrieval
 - **Lightweight local inference**: Llama-3.2-3B-Instruct (Q4_K_M GGUF) — no external API required
-- **Web UI + REST API**: Streamlit chat interface backed by FastAPI, ready for local or Docker deployment
+- **Web UI + REST API**: Streamlit chat interface FastAPI backend, ready for local or Docker deployment
 
 ## Structure
 ```
@@ -59,13 +61,13 @@ RAG/
 ```
 
 ## Inference
+> Requires `indexes/` to be present locally before starting.
 
 ### Terminal CLI
 > Run the following code from the root of the directory
 ```bash
 python3 src/main.py
 ```
-Note that this code executes only when all necessary files are present
 
 ### Inference app
 Run the FastAPI backend and Streamlit UI separately:
@@ -109,7 +111,7 @@ docker compose up api
 ## Models
 In our project we use the following models: 
 - **Embedding model**- [Snowflake](https://huggingface.co/Snowflake/snowflake-arctic-embed-m)
-  0.1B model is the smallest one which show great results in the native RAG tasks () according to [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
+  0.1B model is the smallest one which show great results in the native RAG tasks (Classification: 82.25, Retrieval: 58.41, STS: 76.64) according to [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
 - **Base LLM** — [Llama-3.2-3B-Instruct](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) (Q4_K_M GGUF quantization via `llama-cpp-python`). Runs fully on CPU, no GPU required.
 
 ## Data
@@ -122,16 +124,16 @@ In our project we use the following models:
 As a source of our data we used:
 - [LetterBox](https://huggingface.co/datasets/pkchwy/letterboxd-all-movie-data) dataset: open-source dataset containing film info, including synopsis, directors, cast, genres, release year.
 - [TMDB](https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies) dataset: open-source dataset containing film info, including overviews, genres, keywords, release dates, runtime, rating.
-- ...
+- [Test-queries](https://github.com/ReDialData/website) dataset: manually preprocessed and sampled 100 real users test queries for RAG-system evaluation.
 
 All datasets cover films up to 2026 announcements.
 
 ### Hyperparameters (`config/config.yaml`)
 ```yaml
 data_preprocessing:
-  min_overview_words: 6         # film's plot overviews with length less than this are dropped 
+  min_overview_words: 15        # film's plot overviews with length less than this are dropped 
   max_overview_words: 169       # film's plot overviews with length more than this are truncated
-  top_cast: 5                   # number of top actors from cast which will be present in the description
+  top_cast: 10                  # number of top actors from cast which will be present in the description
   top_keywords: 10              # number of top keywords to be stored in the description
 ```
 ---
@@ -152,14 +154,19 @@ python3 src/dataset/data_proc.py --download --prep
 ### Preprocessing
 Preprocessing is handled in `src/dataset/data_proc.py` and includes:
 - Downloading raw datasets from Hugging Face and Kaggle.
-- Cleaning: Handling NaN (e.g., fill year from Letterboxd, drop low-quality overviews <6 words).
+- Cleaning: Handling NaN (e.g., fill year from Letterboxd, drop low-quality overviews <15 words).
 - Merging: Exact match on normalized title + year (with fallback for NaN years).
-- Filtering: Drop canceled/rumored/planned status, runtime=0 if low-quality.
-- Chunking: Structured text for embeddings (title + plot chunk, metadata chunk with rating/votes/popularity/runtime/cast/keywords).
+- Filtering: Drop: canceled/rumored/planned status, junk titles, no metadata at all, low-quality films with small description.
+- Chunking: Structured text for embeddings (title + plot chunk, metadata chunk with title+ release_info|genres|directors|cast|production companies|keywords|rating).
 - Output: Cleaned CSV in prep/ for vector DB indexing.
 
-## Index
-We used FAISS as our vector database. The pipeline of index creation result into search index file `data/prep/faiss_index.ivf` and metadata file `data/prep/faiss_metadata.pkl`
+## Search system
+We used FAISS as our vector database. The pipeline of index creation result into search index file `indexes/index_FlatIP_plot.ivf` and metadata file `indexes/faiss_metadata.pkl` for FAISS and `indexes/bm25_meta/` for bm25 search.
+
+### Architecture
+We've implemented two separate search systems:
+- plot search: search in plots using FAISS
+- meta search: search in meta using BM25 
 
 ### Replicate
 > Run the following code from the root of the directory
@@ -182,8 +189,17 @@ To test the search results
 ```bash
 python3 src/dataset/index.py search
 ```
-> Works only when `data/prep/faiss_index.ivf` and `data/prep/faiss_metadata.pkl` is present locally!
+> Requires `indexes/` to be present locally before starting.
 
+## LLM
+We used [Llama-3.2-3B-Instruct](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) for 2 purposes:
+- Rewriting user queries(for better search in plot and in meta)
+- Generating film recommendation based on the retrieved results
+
+for this purposes we used system prompts on vanilla LLM with `user_query`/`user_query` & `search_results`  
+
+## RAG system
+Orchestrates Search system with vanilla LLM for generating recommendation. Additionally routes the user query either to plot search or to meta search based on embedding of the query. 
 
 ## Authors
 - Vasilev Ivan
